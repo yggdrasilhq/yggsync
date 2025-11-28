@@ -11,7 +11,6 @@ local  = "~/storage/shared/Documents/obsidian"
 remote = "smb0:data/smbfs/dada/obsidian"
 resync_on_exit = [7]
 resync_flags   = ["--resync"]
-flags = ["--check-access"]
 
 [[jobs]]
 name   = "whatsapp-backups"
