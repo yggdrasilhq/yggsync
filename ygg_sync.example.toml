@@ -17,14 +17,14 @@ flags = ["--check-access"]
 name   = "whatsapp-backups"
 type   = "copy"
 local  = "~/storage/shared/Android/media/com.whatsapp/WhatsApp/Databases"
-remote = "smb0:data/whatsapp/bon/Databases"
+remote = "smb0:data/whatsapp/dada/Databases"
 flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
 name   = "whatsapp-media"
 type   = "retained_copy"
 local  = "~/storage/shared/Android/media/com.whatsapp/WhatsApp/Media"
-remote = "smb0:data/whatsapp/bon/Media"
+remote = "smb0:data/whatsapp/dada/Media"
 local_retention_days = 365   # keep <= 12 months on device
 exclude = ["**/.pending", "**/private/**"]
 flags   = ["--create-empty-src-dirs"]
@@ -33,7 +33,7 @@ flags   = ["--create-empty-src-dirs"]
 name   = "dcim"
 type   = "retained_copy"
 local  = "~/storage/shared/DCIM"
-remote = "smb0:data/immich/bon/DCIM"
+remote = "smb0:data/immich/dada/DCIM"
 local_retention_days = 31
 flags   = ["--create-empty-src-dirs"]
 
@@ -41,21 +41,21 @@ flags   = ["--create-empty-src-dirs"]
 name   = "screenshots"
 type   = "retained_copy"
 local  = "~/storage/shared/Pictures/Screenshots"
-remote = "smb0:data/immich02/bon/android/Screenshots"
+remote = "smb0:data/immich02/dada/android/Screenshots"
 local_retention_days = 31
 
 [[jobs]]
 name   = "cubecallacr"
 type   = "retained_copy"
 local  = "~/storage/shared/CubeACR"
-remote = "smb0:data/cubecallACR/bon"
+remote = "smb0:data/cubecallACR/dada"
 local_retention_days = 90
 
 [[jobs]]
 name   = "androidfs"
 type   = "copy"
 local  = "~/storage/shared"
-remote = "smb0:data/androidfs/bon"
+remote = "smb0:data/androidfs/dada"
 exclude = [
   "Android/media/com.whatsapp/WhatsApp/**",
   "DCIM/**",
