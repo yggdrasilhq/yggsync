@@ -1,0 +1,75 @@
+# Global defaults
+rclone_binary = "rclone"
+rclone_config = "~/.config/rclone/rclone.conf"
+default_flags = ["--fast-list", "--use-json-log", "--stats=30s", "--transfers=4"]
+
+# ---------- Core content syncs ----------
+[[jobs]]
+name   = "obsidian"
+type   = "bisync"
+local  = "~/storage/shared/Documents/obsidian"
+remote = "smb0:data/smbfs/dada/obsidian"
+resync_on_exit = [7]
+resync_flags   = ["--resync"]
+flags = ["--check-access"]
+
+[[jobs]]
+name   = "whatsapp-backups"
+type   = "copy"
+local  = "~/storage/shared/Android/media/com.whatsapp/WhatsApp/Databases"
+remote = "smb0:data/whatsapp/bon/Databases"
+flags  = ["--create-empty-src-dirs"]
+
+[[jobs]]
+name   = "whatsapp-media"
+type   = "retained_copy"
+local  = "~/storage/shared/Android/media/com.whatsapp/WhatsApp/Media"
+remote = "smb0:data/whatsapp/bon/Media"
+local_retention_days = 365   # keep <= 12 months on device
+exclude = ["**/.pending", "**/private/**"]
+flags   = ["--create-empty-src-dirs"]
+
+[[jobs]]
+name   = "dcim"
+type   = "retained_copy"
+local  = "~/storage/shared/DCIM"
+remote = "smb0:data/immich/bon/DCIM"
+local_retention_days = 31
+flags   = ["--create-empty-src-dirs"]
+
+[[jobs]]
+name   = "screenshots"
+type   = "retained_copy"
+local  = "~/storage/shared/Pictures/Screenshots"
+remote = "smb0:data/immich02/bon/android/Screenshots"
+local_retention_days = 31
+
+[[jobs]]
+name   = "cubecallacr"
+type   = "retained_copy"
+local  = "~/storage/shared/CubeACR"
+remote = "smb0:data/cubecallACR/bon"
+local_retention_days = 90
+
+[[jobs]]
+name   = "androidfs"
+type   = "copy"
+local  = "~/storage/shared"
+remote = "smb0:data/androidfs/bon"
+exclude = [
+  "Android/media/com.whatsapp/WhatsApp/**",
+  "DCIM/**",
+  "Pictures/Screenshots/**",
+  "CubeACR/**",
+  "Documents/obsidian/**",
+]
+flags = ["--copy-links", "--create-empty-src-dirs"]
+[[jobs.keep_latest]]
+glob = "Signal/*.backup*"   # keep last 2 Signal backups
+keep = 2
+[[jobs.keep_latest]]
+glob = "Download/*sms-backup*.xml"
+keep = 2
+[[jobs.keep_latest]]
+glob = "Download/*calllog*.xml"
+keep = 2
