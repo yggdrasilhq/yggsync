@@ -46,7 +46,7 @@ local_retention_days = 31
 [[jobs]]
 name   = "cubecallacr"
 type   = "retained_copy"
-local  = "~/storage/shared/CubeACR"
+local  = "~/storage/shared/Documents/CubeCallRecorder/All"
 remote = "smb0:data/cubecallACR/dada"
 local_retention_days = 90
 
@@ -60,11 +60,15 @@ exclude = [
   "DCIM/**",
   "Pictures/Screenshots/**",
   "CubeACR/**",
+  "Documents/CubeCallRecorder/**",
   "Documents/obsidian/**",
 ]
 flags = ["--copy-links", "--create-empty-src-dirs"]
 [[jobs.keep_latest]]
 glob = "Signal/*.backup*"   # keep last 2 Signal backups
+keep = 2
+[[jobs.keep_latest]]
+glob = "Signal/Backups/*.backup*"
 keep = 2
 [[jobs.keep_latest]]
 glob = "Download/*sms-backup*.xml"
