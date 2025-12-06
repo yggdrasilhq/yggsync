@@ -1,2 +1,2 @@
-# Ignore built binaries
-yggsync
+# Ignore built binaries (root binary only)
+/yggsync
