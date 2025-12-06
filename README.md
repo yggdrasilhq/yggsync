@@ -8,7 +8,7 @@ Lightweight sync orchestrator for Termux/Android and small homelabs. It wraps `r
 - Job types:
   - `bisync` with automatic one-time `--resync` retry on specific exit codes.
   - `copy`/`sync` push jobs.
-  - `retained_copy` jobs that upload first, then prune locals only after confirming the file exists on the remote.
+- `retained_copy` jobs that upload first, then prune locals only after confirming the file exists on the remote (size check + modtime guard).
   - `keep_latest` rules to retain only the newest N files matching globs (e.g., Signal backups).
 - Per-job include/exclude globs and extra flags, plus global default flags.
 - `--dry-run` applies to both local pruning and rclone calls.

@@ -196,6 +196,10 @@ func (r *Runner) safeDeleteIfRemoteExists(ctx context.Context, job config.Job, l
 }
 
 func (r *Runner) remoteFileExists(ctx context.Context, job config.Job, localRoot, localPath string) (bool, error) {
+	localInfo, err := os.Stat(localPath)
+	if err != nil {
+		return false, err
+	}
 	rel, err := filepath.Rel(localRoot, localPath)
 	if err != nil {
 		return false, err
@@ -215,11 +219,29 @@ func (r *Runner) remoteFileExists(ctx context.Context, job config.Job, localRoot
 		}
 		return false, err
 	}
-	var entries []map[string]any
+	var entries []struct {
+		Size    int64  `json:"Size"`
+		ModTime string `json:"ModTime"`
+	}
 	if err := json.Unmarshal(out, &entries); err != nil {
 		return false, err
 	}
-	return len(entries) > 0, nil
+	if len(entries) == 0 {
+		return false, nil
+	}
+	info := entries[0]
+	if info.Size < localInfo.Size() {
+		log.Printf("skip delete (remote smaller) %s remote=%d local=%d", localPath, info.Size, localInfo.Size())
+		return false, nil
+	}
+	if t, parseErr := time.Parse(time.RFC3339Nano, info.ModTime); parseErr == nil {
+		// Allow small drift; require remote to be at least as new.
+		if t.Before(localInfo.ModTime().Add(-2 * time.Second)) {
+			log.Printf("skip delete (remote older) %s remote=%s local=%s", localPath, t, localInfo.ModTime())
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func applyLocalRetention(root string, days int, dryRun bool) error {
