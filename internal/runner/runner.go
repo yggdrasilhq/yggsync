@@ -2,11 +2,13 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,8 +36,10 @@ func (r *Runner) RunJob(ctx context.Context, name string) error {
 	switch job.Type {
 	case "bisync":
 		return r.runBisync(ctx, job)
-	case "copy", "sync", "retained_copy":
+	case "copy", "sync":
 		return r.runCopy(ctx, job)
+	case "retained_copy":
+		return r.runRetainedCopy(ctx, job)
 	default:
 		return fmt.Errorf("job %s: unsupported type %q", job.Name, job.Type)
 	}
@@ -50,6 +54,9 @@ func (r *Runner) runBisync(ctx context.Context, job config.Job) error {
 }
 
 func (r *Runner) runCopy(ctx context.Context, job config.Job) error {
+	if job.Type == "retained_copy" {
+		return r.runRetainedCopy(ctx, job)
+	}
 	local := config.ExpandPath(job.Local)
 	if job.LocalRetentionDays > 0 {
 		if err := applyLocalRetention(local, job.LocalRetentionDays, r.dryRun); err != nil {
@@ -68,6 +75,35 @@ func (r *Runner) runCopy(ctx context.Context, job config.Job) error {
 	}
 	args := r.buildCommonArgs(subcmd, job)
 	return r.execRclone(ctx, job, args)
+}
+
+func (r *Runner) runRetainedCopy(ctx context.Context, job config.Job) error {
+	local := config.ExpandPath(job.Local)
+
+	// Push first; only prune after we confirm the file exists on the remote.
+	if err := r.execRclone(ctx, job, r.buildCommonArgs("copy", job)); err != nil {
+		return err
+	}
+
+	var candidates []string
+	if job.LocalRetentionDays > 0 {
+		ret, err := retentionCandidates(local, job.LocalRetentionDays)
+		if err != nil {
+			return fmt.Errorf("local retention: %w", err)
+		}
+		candidates = append(candidates, ret...)
+	}
+	if len(job.KeepLatest) > 0 {
+		kl, err := keepLatestCandidates(local, job.KeepLatest)
+		if err != nil {
+			return fmt.Errorf("keep_latest: %w", err)
+		}
+		candidates = append(candidates, kl...)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	return r.safeDeleteIfRemoteExists(ctx, job, local, candidates)
 }
 
 func (r *Runner) buildCommonArgs(op string, job config.Job) []string {
@@ -126,6 +162,64 @@ type commandError struct {
 
 func (e *commandError) Error() string {
 	return fmt.Sprintf("%s: rclone exit %d", e.name, e.code)
+}
+
+// safeDeleteIfRemoteExists removes local files only when a matching remote file exists.
+// Any remote check error leaves the local file intact.
+func (r *Runner) safeDeleteIfRemoteExists(ctx context.Context, job config.Job, localRoot string, paths []string) error {
+	seen := make(map[string]struct{})
+	for _, p := range paths {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+
+		has, err := r.remoteFileExists(ctx, job, localRoot, p)
+		if err != nil {
+			log.Printf("skip delete (remote check failed) %s: %v", p, err)
+			continue
+		}
+		if !has {
+			log.Printf("skip delete (not on remote) %s", p)
+			continue
+		}
+		if r.dryRun {
+			log.Printf("[dry-run] would delete %s (confirmed on remote)", p)
+			continue
+		}
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+		log.Printf("deleted %s (confirmed on remote)", p)
+	}
+	return nil
+}
+
+func (r *Runner) remoteFileExists(ctx context.Context, job config.Job, localRoot, localPath string) (bool, error) {
+	rel, err := filepath.Rel(localRoot, localPath)
+	if err != nil {
+		return false, err
+	}
+	remotePath := path.Join(job.Remote, filepath.ToSlash(rel))
+	args := []string{"lsjson", remotePath, "--files-only"}
+	cmd := exec.CommandContext(ctx, r.cfg.RcloneBinary, args...)
+	cmd.Env = append(os.Environ(), "RCLONE_CONFIG="+config.ExpandPath(r.cfg.RcloneConfig))
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// rclone uses exit code 3 when a path is not found.
+			if exitErr.ExitCode() == 3 {
+				return false, nil
+			}
+		}
+		return false, err
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(out, &entries); err != nil {
+		return false, err
+	}
+	return len(entries) > 0, nil
 }
 
 func applyLocalRetention(root string, days int, dryRun bool) error {
@@ -200,4 +294,66 @@ func applyKeepLatest(root string, rules []config.KeepLatestRule, dryRun bool) er
 		}
 	}
 	return nil
+}
+
+func retentionCandidates(root string, days int) ([]string, error) {
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	matches := make([]string, 0)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+	return matches, err
+}
+
+func keepLatestCandidates(root string, rules []config.KeepLatestRule) ([]string, error) {
+	toDelete := make([]string, 0)
+	for _, rule := range rules {
+		if rule.Keep < 1 {
+			continue
+		}
+		matches := make([]string, 0)
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			if ok, _ := filepath.Match(rule.Glob, rel); ok {
+				matches = append(matches, path)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(matches, func(i, j int) bool {
+			ai, _ := os.Stat(matches[i])
+			aj, _ := os.Stat(matches[j])
+			return ai.ModTime().After(aj.ModTime())
+		})
+		for idx, path := range matches {
+			if idx >= rule.Keep {
+				toDelete = append(toDelete, path)
+			}
+		}
+	}
+	return toDelete, nil
 }
