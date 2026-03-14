@@ -4,43 +4,54 @@
 rclone_binary = "rclone"
 rclone_config = "~/.config/rclone/rclone.conf"
 default_flags = ["--fast-list", "--use-json-log", "--stats=30s", "--transfers=4"]
+lock_file = "~/.local/state/yggsync.lock"
 
 [[jobs]]
 name   = "notes"
+description = "Keep the working notes tree in sync between laptop and NAS"
 type   = "bisync"
 local  = "~/Documents/notes"
 remote = "nas:users/alice/notes"
+timeout_seconds = 900
 resync_on_exit = [7]
 resync_flags   = ["--resync"]
 exclude = ["**/.obsidian/**", "**/.trash/**"]
 
 [[jobs]]
 name   = "chat-backups"
+description = "Push chat export archives to remote storage"
 type   = "copy"
 local  = "~/Backups/chat"
 remote = "nas:users/alice/chat-backups"
+timeout_seconds = 600
 flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
 name   = "camera-roll"
+description = "Upload camera media first, then prune old locals after remote confirmation"
 type   = "retained_copy"
 local  = "~/Pictures/Camera"
 remote = "nas:users/alice/media/camera-roll"
+timeout_seconds = 1800
 local_retention_days = 30
 flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
 name   = "screenshots"
+description = "Offload screenshots and keep the device lean"
 type   = "retained_copy"
 local  = "~/Pictures/Screenshots"
 remote = "nas:users/alice/media/screenshots"
+timeout_seconds = 900
 local_retention_days = 30
 
 [[jobs]]
 name   = "downloads-archive"
+description = "Archive only the download artifacts worth keeping"
 type   = "copy"
 local  = "~/Downloads"
 remote = "nas:users/alice/downloads"
+timeout_seconds = 900
 include = [
   "session-buddy-export-*",
   "receipts/**",
@@ -54,7 +65,9 @@ keep = 1
 
 [[jobs]]
 name   = "home-config"
+description = "Copy workstation configuration for recovery and migration"
 type   = "copy"
 local  = "~/.config"
 remote = "nas:users/alice/workstation/config"
+timeout_seconds = 1800
 flags  = ["--create-empty-src-dirs"]
