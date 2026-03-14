@@ -20,26 +20,23 @@ This repository does not own:
 
 ## Release Notes
 
-Prefer the Forgejo API via `curl` for release automation.
-Public release assets should live under `yggdrasilhq/yggsync`.
+Prefer GitHub releases for public distribution once the repo is published under `yggdrasilhq/yggsync`.
+Forgejo remains useful as a staging mirror.
 
 Examples:
 
 ```bash
-curl -H "Authorization: token $GITEA_TOKEN" \
-  https://g.gour.top/api/v1/repos/yggdrasilhq/yggsync/releases | jq
+gh release list --repo yggdrasilhq/yggsync
 ```
 
 ```bash
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/yggsync-linux-amd64 ./cmd/yggsync
-RELEASE_ID=$(curl -s -H "Authorization: token $GITEA_TOKEN" \
-  https://g.gour.top/api/v1/repos/yggdrasilhq/yggsync/releases | \
-  jq 'map(select(.tag_name=="v0.1.3"))[0].id')
-curl -s -X POST \
-  -H "Authorization: token $GITEA_TOKEN" \
-  -H "Content-Type: multipart/form-data" \
-  -F "attachment=@/tmp/yggsync-linux-amd64" \
-  "https://g.gour.top/api/v1/repos/yggdrasilhq/yggsync/releases/${RELEASE_ID}/assets?name=yggsync-linux-amd64"
+GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o /tmp/yggsync-android-arm64 ./cmd/yggsync
+gh release create v0.2.0 \
+  /tmp/yggsync-linux-amd64#yggsync-linux-amd64 \
+  /tmp/yggsync-android-arm64#yggsync-android-arm64 \
+  --repo yggdrasilhq/yggsync \
+  --title "yggsync v0.2.0"
 ```
 
 ## Guardrails
@@ -48,3 +45,4 @@ curl -s -X POST \
 - Keep the sample config realistic but generic.
 - Prefer additive features; this tool should stay small enough to fully read in one sitting.
 - Any pruning behavior must remain conservative and dry-run friendly.
+- Any new reliability feature should come with a focused test.

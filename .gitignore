@@ -1,5 +1,6 @@
 /yggsync
 /dist/
+ygg_sync.local.toml
 *.swp
 *.swo
 .DS_Store
