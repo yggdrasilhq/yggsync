@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"yggsync/internal/config"
@@ -23,6 +24,12 @@ type Runner struct {
 	version string
 }
 
+type Summary struct {
+	Succeeded []string
+	Failed    map[string]error
+	Duration  time.Duration
+}
+
 func New(cfg config.Config, dryRun bool, version string) *Runner {
 	return &Runner{cfg: cfg, dryRun: dryRun, version: version}
 }
@@ -32,17 +39,49 @@ func (r *Runner) RunJob(ctx context.Context, name string) error {
 	if !ok {
 		return fmt.Errorf("unknown job %q", name)
 	}
+	jobCtx := ctx
+	var cancel context.CancelFunc
+	if job.TimeoutSeconds > 0 {
+		jobCtx, cancel = context.WithTimeout(ctx, time.Duration(job.TimeoutSeconds)*time.Second)
+		defer cancel()
+	}
 
 	switch job.Type {
 	case "bisync":
-		return r.runBisync(ctx, job)
+		return r.runBisync(jobCtx, job)
 	case "copy", "sync":
-		return r.runCopy(ctx, job)
+		return r.runCopy(jobCtx, job)
 	case "retained_copy":
-		return r.runRetainedCopy(ctx, job)
+		return r.runRetainedCopy(jobCtx, job)
 	default:
 		return fmt.Errorf("job %s: unsupported type %q", job.Name, job.Type)
 	}
+}
+
+func (r *Runner) RunJobs(ctx context.Context, names []string) Summary {
+	start := time.Now()
+	summary := Summary{
+		Succeeded: make([]string, 0, len(names)),
+		Failed:    make(map[string]error),
+	}
+	unlock, err := acquireLock(config.ExpandPath(r.cfg.LockFile))
+	if err != nil {
+		summary.Failed["_lock"] = err
+		summary.Duration = time.Since(start)
+		return summary
+	}
+	defer unlock()
+
+	for _, name := range names {
+		if err := r.RunJob(ctx, name); err != nil {
+			summary.Failed[name] = err
+			log.Printf("job %s failed: %v", name, err)
+			continue
+		}
+		summary.Succeeded = append(summary.Succeeded, name)
+	}
+	summary.Duration = time.Since(start)
+	return summary
 }
 
 func (r *Runner) runBisync(ctx context.Context, job config.Job) error {
@@ -129,12 +168,39 @@ func (r *Runner) execRclone(ctx context.Context, job config.Job, args []string) 
 	out, err := cmd.CombinedOutput()
 	log.Printf("job=%s op=%s\n%s", job.Name, args[0], strings.TrimSpace(string(out)))
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("%s: timed out after %ds", job.Name, job.TimeoutSeconds)
+		}
 		if exitErr := (&exec.ExitError{}); errors.As(err, &exitErr) {
 			return &commandError{name: job.Name, code: exitErr.ExitCode(), output: string(out)}
 		}
 		return err
 	}
 	return nil
+}
+
+func acquireLock(path string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, fmt.Errorf("another yggsync run is already active (%s)", path)
+		}
+		return nil, err
+	}
+	if err := file.Truncate(0); err == nil {
+		_, _ = file.WriteString(fmt.Sprintf("%d\n", os.Getpid()))
+	}
+	return func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, nil
 }
 
 func (r *Runner) maybeResync(ctx context.Context, job config.Job, err error) error {

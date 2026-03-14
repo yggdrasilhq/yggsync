@@ -18,7 +18,10 @@ At that point you need a tool that stays simple but gives you repeatable jobs, s
 - `bisync`, `copy`, `sync`, and `retained_copy` job types
 - optional `keep_latest` rotation rules
 - optional one-time `--resync` retry for `bisync` jobs
+- per-job timeouts
+- lock file to prevent overlapping timer runs
 - `--dry-run`, `--list`, and `--jobs` selection for safe iteration
+- non-zero exit when any selected job fails
 
 ## Typical uses
 
@@ -52,14 +55,23 @@ yggsync -version
 
 ## Config
 
-Start from [`ygg_sync.example.toml`](./ygg_sync.example.toml).
+Start from [`ygg_sync.example.toml`](./ygg_sync.example.toml) and keep your private values in `ygg_sync.local.toml` (gitignored).
 Key concepts:
 
 - `rclone_binary`: binary to invoke, default `rclone`
 - `rclone_config`: rclone config path
+- `lock_file`: prevents overlapping runs from timers or widgets
 - `default_flags`: flags applied to every rclone invocation
-- `[[jobs]]`: named sync jobs with local path, remote path, and type
+- `[[jobs]]`: named sync jobs with local path, remote path, timeout, and type
 - `[[jobs.keep_latest]]`: keep newest N files matching a glob
+
+## Testing
+
+```bash
+go test ./...
+```
+
+The tests cover config validation, lock behavior, summary reporting, and timeout handling.
 
 ## Boundaries
 

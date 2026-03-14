@@ -2,7 +2,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +18,7 @@ type KeepLatestRule struct {
 
 type Job struct {
 	Name               string           `toml:"name"`
+	Description        string           `toml:"description"`
 	Type               string           `toml:"type"`
 	Local              string           `toml:"local"`
 	Remote             string           `toml:"remote"`
@@ -27,12 +30,14 @@ type Job struct {
 	KeepLatest         []KeepLatestRule `toml:"keep_latest"`
 	ResyncOnExit       []int            `toml:"resync_on_exit"`
 	ResyncFlags        []string         `toml:"resync_flags"`
+	TimeoutSeconds     int              `toml:"timeout_seconds"`
 }
 
 type Config struct {
 	RcloneBinary string   `toml:"rclone_binary"`
 	RcloneConfig string   `toml:"rclone_config"`
 	DefaultFlags []string `toml:"default_flags"`
+	LockFile     string   `toml:"lock_file"`
 	Jobs         []Job    `toml:"jobs"`
 }
 
@@ -61,6 +66,12 @@ func (c *Config) fillDefaults() error {
 	if len(c.DefaultFlags) == 0 {
 		c.DefaultFlags = []string{"--fast-list", "--stats=30s", "--use-json-log"}
 	}
+	if c.LockFile == "" {
+		c.LockFile = "~/.local/state/yggsync.lock"
+	}
+	if _, err := exec.LookPath(c.RcloneBinary); err != nil {
+		return fmt.Errorf("rclone binary %q not found in PATH", c.RcloneBinary)
+	}
 	seen := make(map[string]struct{})
 	for i, j := range c.Jobs {
 		if j.Name == "" {
@@ -73,6 +84,20 @@ func (c *Config) fillDefaults() error {
 		j.Type = strings.ToLower(j.Type)
 		if j.Direction == "" {
 			j.Direction = "push"
+		}
+		if j.TimeoutSeconds < 0 {
+			return fmt.Errorf("job %s has invalid timeout_seconds=%d", j.Name, j.TimeoutSeconds)
+		}
+		if j.Local == "" {
+			return fmt.Errorf("job %s missing local path", j.Name)
+		}
+		if j.Remote == "" {
+			return fmt.Errorf("job %s missing remote path", j.Name)
+		}
+		switch j.Type {
+		case "bisync", "copy", "sync", "retained_copy":
+		default:
+			return fmt.Errorf("job %s has unsupported type %q", j.Name, j.Type)
 		}
 		c.Jobs[i] = j
 	}

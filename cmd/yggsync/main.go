@@ -7,13 +7,12 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"yggsync/internal/config"
 	"yggsync/internal/runner"
 )
 
-const version = "0.1.3"
+const version = "0.2.0"
 
 func main() {
 	cfgPath := flag.String("config", defaultConfigPath(), "Path to ygg_sync TOML config")
@@ -59,13 +58,14 @@ func main() {
 		}
 	}
 
-	start := time.Now()
-	for _, name := range names {
-		if err := r.RunJob(ctx, name); err != nil {
-			log.Printf("job %s: %v", name, err)
-		}
+	summary := r.RunJobs(ctx, names)
+	for name, err := range summary.Failed {
+		log.Printf("job %s: %v", name, err)
 	}
-	log.Printf("done in %s", time.Since(start).Round(time.Millisecond))
+	log.Printf("summary ok=%d failed=%d duration=%s", len(summary.Succeeded), len(summary.Failed), summary.Duration.Round(0))
+	if len(summary.Failed) > 0 {
+		os.Exit(1)
+	}
 }
 
 func defaultConfigPath() string {
