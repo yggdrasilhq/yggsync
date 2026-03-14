@@ -3,7 +3,7 @@
 
 rclone_binary = "rclone"
 rclone_config = "~/.config/rclone/rclone.conf"
-default_flags = ["--fast-list", "--use-json-log", "--stats=30s", "--transfers=4"]
+default_flags = ["--use-json-log", "--stats=120s", "--transfers=2", "--checkers=4"]
 lock_file = "~/.local/state/yggsync.lock"
 
 [[jobs]]
@@ -16,6 +16,16 @@ timeout_seconds = 900
 resync_on_exit = [7]
 resync_flags   = ["--resync"]
 exclude = ["**/.obsidian/**", "**/.trash/**"]
+flags = [
+  "--create-empty-src-dirs",
+  "--track-renames",
+  "--resilient",
+  "--recover",
+  "--conflict-loser",
+  "pathname",
+  "--max-delete",
+  "90",
+]
 
 [[jobs]]
 name   = "chat-backups"

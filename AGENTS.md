@@ -32,11 +32,11 @@ gh release list --repo yggdrasilhq/yggsync
 ```bash
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/yggsync-linux-amd64 ./cmd/yggsync
 GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o /tmp/yggsync-android-arm64 ./cmd/yggsync
-gh release create v0.2.0 \
+gh release create v0.2.1 \
   /tmp/yggsync-linux-amd64#yggsync-linux-amd64 \
   /tmp/yggsync-android-arm64#yggsync-android-arm64 \
   --repo yggdrasilhq/yggsync \
-  --title "yggsync v0.2.0"
+  --title "yggsync v0.2.1"
 ```
 
 ## Guardrails

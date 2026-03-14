@@ -38,7 +38,7 @@ func TestRunJobsReturnsFailures(t *testing.T) {
 			},
 		},
 	}
-	r := New(cfg, false, "test")
+	r := New(cfg, false, false, false, "test")
 	r.cfg.RcloneBinary = okScript
 	summary := r.RunJobs(context.Background(), []string{"ok"})
 	if len(summary.Succeeded) != 1 || len(summary.Failed) != 0 {
@@ -91,8 +91,42 @@ func TestRunJobTimeout(t *testing.T) {
 	}
 	_ = os.WriteFile(cfg.RcloneConfig, []byte(""), 0o644)
 
-	err := New(cfg, false, "test").RunJob(context.Background(), "slow")
+	err := New(cfg, false, false, false, "test").RunJob(context.Background(), "slow")
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatal("expected timeout error")
+	}
+}
+
+func TestForceResyncAddsFlag(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "args.log")
+	script := filepath.Join(dir, "fake-rclone-log.sh")
+	body := "#!/bin/sh\nprintf '%s\n' \"$@\" > " + logFile + "\nexit 0\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		RcloneBinary: script,
+		RcloneConfig: filepath.Join(dir, "rclone.conf"),
+		LockFile:     filepath.Join(dir, "yggsync.lock"),
+		Jobs: []config.Job{
+			{
+				Name:   "notes",
+				Type:   "bisync",
+				Local:  dir,
+				Remote: "remote:notes",
+			},
+		},
+	}
+	_ = os.WriteFile(cfg.RcloneConfig, []byte(""), 0o644)
+	if err := New(cfg, false, true, false, "test").RunJob(context.Background(), "notes"); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "--resync") {
+		t.Fatalf("expected --resync in args, got %q", string(args))
 	}
 }
