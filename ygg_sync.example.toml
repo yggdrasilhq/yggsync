@@ -18,7 +18,6 @@ resync_flags   = ["--resync"]
 exclude = ["**/.obsidian/**", "**/.trash/**"]
 flags = [
   "--create-empty-src-dirs",
-  "--track-renames",
   "--resilient",
   "--recover",
   "--conflict-loser",

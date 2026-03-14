@@ -69,7 +69,6 @@ resync_on_exit = [7]
 resync_flags = ["--resync"]
 flags = [
   "--create-empty-src-dirs",
-  "--track-renames",
   "--resilient",
   "--recover",
   "--max-delete",
