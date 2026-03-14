@@ -1,2 +1,5 @@
-# Ignore built binaries (root binary only)
 /yggsync
+/dist/
+*.swp
+*.swo
+.DS_Store

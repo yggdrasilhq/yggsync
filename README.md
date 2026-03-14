@@ -1,49 +1,72 @@
 # yggsync
 
-Lightweight sync orchestrator for Termux/Android and small homelabs. It wraps `rclone` with a TOML config so you can run multiple jobs (bisync, push with retention, keep-latest rotation) from a single statically linked binary.
+`yggsync` is a small Go sync orchestrator for phones, laptops, and homelabs.
+It wraps `rclone` with a TOML job file so one binary can run a handful of repeatable sync flows without forcing every user to hand-roll shell scripts.
 
-## Features
-- Single binary (pure Go, CGO disabled) – easy to drop into Termux.
-- Jobs defined in `~/.config/ygg_sync.toml`.
-- Job types:
-  - `bisync` with automatic one-time `--resync` retry on specific exit codes.
-  - `copy`/`sync` push jobs.
-- `retained_copy` jobs that upload first, then prune locals only after confirming the file exists on the remote (size check + modtime guard).
-  - `keep_latest` rules to retain only the newest N files matching globs (e.g., Signal backups).
-- Per-job include/exclude globs and extra flags, plus global default flags.
-- `--dry-run` applies to both local pruning and rclone calls.
+## Why it exists
+
+Most personal sync setups begin as one-off commands.
+That works until the jobs multiply: notes, camera roll, screenshots, chat exports, desktop downloads, and long-retention archives.
+At that point you need a tool that stays simple but gives you repeatable jobs, safer pruning, and one place to describe intent.
+
+`yggsync` is that layer.
+
+## Capabilities
+
+- single static Go binary
+- TOML-defined job catalog
+- `bisync`, `copy`, `sync`, and `retained_copy` job types
+- optional `keep_latest` rotation rules
+- optional one-time `--resync` retry for `bisync` jobs
+- `--dry-run`, `--list`, and `--jobs` selection for safe iteration
+
+## Typical uses
+
+- phone notes mirrored to a NAS
+- camera roll uploads with local retention
+- screenshot archives
+- chat export retention
+- desktop download subsets copied to a remote
 
 ## Build
+
 ```bash
-git clone https://github.com/<you>/yggsync
-cd yggsync
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/yggsync      # Termux on ARM64
-GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/yggsync    # Bionic build
+go build ./cmd/yggsync
 ```
-The resulting `yggsync` binary can be copied to your device (e.g., `~/git/ygg_client/android/bin/yggsync`).
+
+Cross-build examples:
+
+```bash
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/yggsync-linux-amd64 ./cmd/yggsync
+GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o dist/yggsync-android-arm64 ./cmd/yggsync
+```
 
 ## Usage
+
 ```bash
-yggsync -config ~/.config/ygg_sync.toml              # run all jobs
-yggsync -jobs obsidian,dcim -dry-run                 # select jobs, no changes
-yggsync -list                                        # list job names
+yggsync -config ~/.config/ygg_sync.toml
+yggsync -jobs notes,camera-roll -dry-run
+yggsync -list
+yggsync -version
 ```
 
-## Config (TOML)
-See `ygg_sync.example.toml` for a full template. Key fields:
-- `rclone_binary` (default `rclone`)
-- `rclone_config` (default `~/.config/rclone/rclone.conf`)
-- `default_flags` applied to every rclone run
-- `[[jobs]]` entries with:
-  - `name`, `type` (`bisync`|`copy`|`sync`|`retained_copy`)
-  - `local`, `remote`
-  - optional `flags`, `include`, `exclude`
-  - `local_retention_days` (for `retained_copy`)
-  - `keep_latest` rules: `[[jobs.keep_latest]] glob="Signal*.backup*" keep=2`
-  - `resync_on_exit` (exit codes that trigger `--resync` retry for bisync)
-  - `resync_flags` (extra flags for the retry)
+## Config
 
-## Notes
-- The tool sets `RCLONE_CONFIG` env var based on `rclone_config`.
-- Logs are printed to stdout/stderr; redirect as needed.
-- Keep retention rules conservative until you trust the config. Use `--dry-run` first.
+Start from [`ygg_sync.example.toml`](./ygg_sync.example.toml).
+Key concepts:
+
+- `rclone_binary`: binary to invoke, default `rclone`
+- `rclone_config`: rclone config path
+- `default_flags`: flags applied to every rclone invocation
+- `[[jobs]]`: named sync jobs with local path, remote path, and type
+- `[[jobs.keep_latest]]`: keep newest N files matching a glob
+
+## Boundaries
+
+- `yggsync`: sync engine and config format
+- `yggclient`: endpoint wrappers, install helpers, service templates
+- `yggdocs`: user guides, recipes, and ecosystem docs
+
+## License
+
+Apache-2.0

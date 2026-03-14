@@ -1,80 +1,60 @@
-# Global defaults
+# Example yggsync configuration.
+# Copy to ~/.config/ygg_sync.toml and adjust remotes, paths, and retention.
+
 rclone_binary = "rclone"
 rclone_config = "~/.config/rclone/rclone.conf"
 default_flags = ["--fast-list", "--use-json-log", "--stats=30s", "--transfers=4"]
 
-# ---------- Core content syncs ----------
 [[jobs]]
-name   = "obsidian"
+name   = "notes"
 type   = "bisync"
-local  = "~/storage/shared/Documents/obsidian"
-remote = "smb0:data/smbfs/dada/obsidian"
+local  = "~/Documents/notes"
+remote = "nas:users/alice/notes"
 resync_on_exit = [7]
 resync_flags   = ["--resync"]
+exclude = ["**/.obsidian/**", "**/.trash/**"]
 
 [[jobs]]
-name   = "whatsapp-backups"
+name   = "chat-backups"
 type   = "copy"
-local  = "~/storage/shared/Android/media/com.whatsapp/WhatsApp/Databases"
-remote = "smb0:data/whatsapp/dada/Databases"
+local  = "~/Backups/chat"
+remote = "nas:users/alice/chat-backups"
 flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
-name   = "whatsapp-media"
+name   = "camera-roll"
 type   = "retained_copy"
-local  = "~/storage/shared/Android/media/com.whatsapp/WhatsApp/Media"
-remote = "smb0:data/whatsapp/dada/Media"
-local_retention_days = 365   # keep <= 12 months on device
-exclude = ["**/.pending", "**/private/**"]
-flags   = ["--create-empty-src-dirs"]
-
-[[jobs]]
-name   = "dcim"
-type   = "retained_copy"
-local  = "~/storage/shared/DCIM"
-remote = "smb0:data/immich/dada/DCIM"
-local_retention_days = 31
-flags   = ["--create-empty-src-dirs"]
+local  = "~/Pictures/Camera"
+remote = "nas:users/alice/media/camera-roll"
+local_retention_days = 30
+flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
 name   = "screenshots"
 type   = "retained_copy"
-local  = "~/storage/shared/Pictures/Screenshots"
-remote = "smb0:data/immich02/dada/android/Screenshots"
-local_retention_days = 31
+local  = "~/Pictures/Screenshots"
+remote = "nas:users/alice/media/screenshots"
+local_retention_days = 30
 
 [[jobs]]
-name   = "cubecallacr"
-type   = "retained_copy"
-local  = "~/storage/shared/Documents/CubeCallRecorder/All"
-remote = "smb0:data/cubecallACR/dada"
-local_retention_days = 90
-
-[[jobs]]
-name   = "androidfs"
+name   = "downloads-archive"
 type   = "copy"
-local  = "~/storage/shared"
-remote = "smb0:data/androidfs/dada"
-exclude = [
-  "Android/data/**",
-  "Android/obb/**",
-  "Android/media/com.whatsapp/WhatsApp/**",
-  "DCIM/**",
-  "Pictures/Screenshots/**",
-  "CubeACR/**",
-  "Documents/CubeCallRecorder/**",
-  "Documents/obsidian/**",
+local  = "~/Downloads"
+remote = "nas:users/alice/downloads"
+include = [
+  "session-buddy-export-*",
+  "receipts/**",
+  "exports/**",
 ]
-flags = ["--copy-links", "--create-empty-src-dirs"]
+exclude = ["*"]
+flags   = ["--create-empty-src-dirs"]
 [[jobs.keep_latest]]
-glob = "Signal/*.backup*"   # keep last 2 Signal backups
-keep = 2
-[[jobs.keep_latest]]
-glob = "Signal/Backups/*.backup*"
-keep = 2
-[[jobs.keep_latest]]
-glob = "Download/*sms-backup*.xml"
-keep = 2
-[[jobs.keep_latest]]
-glob = "Download/*calllog*.xml"
-keep = 2
+glob = "session-buddy-export-*"
+keep = 1
+
+[[jobs]]
+name   = "home-config"
+type   = "copy"
+local  = "~/.config"
+remote = "nas:users/alice/workstation/config"
+flags  = ["--create-empty-src-dirs"]
