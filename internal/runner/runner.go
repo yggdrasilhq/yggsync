@@ -21,6 +21,8 @@ import (
 type Runner struct {
 	cfg     config.Config
 	dryRun  bool
+	forceResync bool
+	forceBisync bool
 	version string
 }
 
@@ -30,8 +32,10 @@ type Summary struct {
 	Duration  time.Duration
 }
 
-func New(cfg config.Config, dryRun bool, version string) *Runner {
-	return &Runner{cfg: cfg, dryRun: dryRun, version: version}
+func New(cfg config.Config, dryRun bool, forceResync bool, forceBisync bool, version string) *Runner {
+	return &Runner{
+		cfg: cfg, dryRun: dryRun, forceResync: forceResync, forceBisync: forceBisync, version: version,
+	}
 }
 
 func (r *Runner) RunJob(ctx context.Context, name string) error {
@@ -86,6 +90,12 @@ func (r *Runner) RunJobs(ctx context.Context, names []string) Summary {
 
 func (r *Runner) runBisync(ctx context.Context, job config.Job) error {
 	args := r.buildCommonArgs("bisync", job)
+	if r.forceResync {
+		args = append(args, "--resync")
+	}
+	if r.forceBisync {
+		args = append(args, "--force")
+	}
 	if err := r.execRclone(ctx, job, args); err != nil {
 		return r.maybeResync(ctx, job, err)
 	}

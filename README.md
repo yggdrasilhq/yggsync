@@ -18,6 +18,7 @@ At that point you need a tool that stays simple but gives you repeatable jobs, s
 - `bisync`, `copy`, `sync`, and `retained_copy` job types
 - optional `keep_latest` rotation rules
 - optional one-time `--resync` retry for `bisync` jobs
+- manual `--resync` mode for operator recovery runs
 - per-job timeouts
 - lock file to prevent overlapping timer runs
 - `--dry-run`, `--list`, and `--jobs` selection for safe iteration
@@ -49,6 +50,8 @@ GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o dist/yggsync-android-arm64 .
 ```bash
 yggsync -config ~/.config/ygg_sync.toml
 yggsync -jobs notes,camera-roll -dry-run
+yggsync -jobs notes --resync
+yggsync -jobs notes --resync --force-bisync
 yggsync -list
 yggsync -version
 ```
@@ -69,9 +72,28 @@ Key concepts:
 
 ```bash
 go test ./...
+./testbench/run.sh
 ```
 
-The tests cover config validation, lock behavior, summary reporting, and timeout handling.
+The Go tests cover config validation, lock behavior, summary reporting, timeout handling, and force-resync wiring.
+The shell testbench exercises delete, rename, conflict, and retained-copy scenarios with mock phone/laptop directories.
+
+## Bisync Reality
+
+`rclone bisync` is useful, but it is not magic. Concurrent edits, deletes, renames, and long gaps between runs can still surface conflicts or require a deliberate `--resync` recovery pass.
+
+For large rename/delete waves that trip bisync safety checks, the operator path is explicit:
+
+```bash
+yggsync -jobs notes --resync --force-bisync
+```
+
+For public defaults, `yggsync` now favors slower, safer profiles over aggressive ones:
+
+- fewer transfers/checkers on phones
+- lock files to stop overlaps
+- explicit battery-aware wrappers in `yggclient`
+- safer bisync flags in the example configs
 
 ## Boundaries
 
