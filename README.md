@@ -94,6 +94,7 @@ For public defaults, `yggsync` now favors slower, safer profiles over aggressive
 - lock files to stop overlaps
 - explicit battery-aware wrappers in `yggclient`
 - safer bisync flags in the example configs
+- no default rename-tracking assumption on backends that cannot support it reliably
 
 ## Boundaries
 
