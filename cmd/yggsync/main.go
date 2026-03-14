@@ -12,13 +12,15 @@ import (
 	"yggsync/internal/runner"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 func main() {
 	cfgPath := flag.String("config", defaultConfigPath(), "Path to ygg_sync TOML config")
 	jobList := flag.String("jobs", "", "Comma-separated list of job names to run (default: all)")
 	list := flag.Bool("list", false, "List jobs and exit")
 	dryRun := flag.Bool("dry-run", false, "Do not modify anything; pass --dry-run to rclone and retention")
+	forceResync := flag.Bool("resync", false, "Pass --resync to bisync jobs in this run")
+	forceBisync := flag.Bool("force-bisync", false, "Pass --force to bisync jobs in this run")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -49,7 +51,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	r := runner.New(cfg, *dryRun, version)
+	r := runner.New(cfg, *dryRun, *forceResync, *forceBisync, version)
 
 	if len(names) == 0 {
 		names = make([]string, 0, len(cfg.Jobs))
