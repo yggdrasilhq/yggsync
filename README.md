@@ -31,7 +31,7 @@ Generic two-way sync is the wrong tool for a live vault on SMB.
 The remote side can be:
 
 - a plain local path
-- a configured target reference such as `nas:immich/dada/DCIM`
+- a configured target reference such as `nas:immich/path-user/DCIM`
 
 Targets are defined in `[[targets]]`.
 Today `yggsync` supports:
