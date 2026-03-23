@@ -370,6 +370,25 @@ yggsync -config ~/.config/ygg_sync.toml -jobs screenshots -dry-run
 yggsync -config ~/.config/ygg_sync.toml -jobs obsidian -worktree-op update
 ```
 
+Mounted NAS variant:
+
+If the laptop already uses an SMB mount through `smb4k`, autofs, or a manual mount,
+you can point `remote` at that mounted path directly instead of using an SMB target:
+
+```toml
+[[jobs]]
+name   = "screenshots"
+type   = "copy"
+local  = "~/Pictures/Screenshots"
+remote = "/run/smb4k/pi/192.168.0.213/data/immich/path-user/desktop/Screenshots"
+```
+
+Important:
+
+- only do this if the remote path is a real mount point
+- guard scheduled runs with `ConditionPathIsMountPoint=` or an equivalent mount check
+- otherwise a missing mount can turn into accidental writes into an empty local directory
+
 ### Android Example
 
 Goal:
