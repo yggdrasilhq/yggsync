@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +13,21 @@ import (
 type KeepLatestRule struct {
 	Glob string `toml:"glob"`
 	Keep int    `toml:"keep"`
+}
+
+type Target struct {
+	Name        string `toml:"name"`
+	Type        string `toml:"type"`
+	Host        string `toml:"host"`
+	Port        int    `toml:"port"`
+	Share       string `toml:"share"`
+	BasePath    string `toml:"base_path"`
+	Path        string `toml:"path"`
+	Username    string `toml:"username"`
+	Password    string `toml:"password"`
+	UsernameEnv string `toml:"username_env"`
+	PasswordEnv string `toml:"password_env"`
+	Domain      string `toml:"domain"`
 }
 
 type Job struct {
@@ -32,14 +46,19 @@ type Job struct {
 	ResyncOnExit       []int            `toml:"resync_on_exit"`
 	ResyncFlags        []string         `toml:"resync_flags"`
 	TimeoutSeconds     int              `toml:"timeout_seconds"`
+	StateFile          string           `toml:"state_file"`
 }
 
 type Config struct {
-	RcloneBinary string   `toml:"rclone_binary"`
-	RcloneConfig string   `toml:"rclone_config"`
-	DefaultFlags []string `toml:"default_flags"`
-	LockFile     string   `toml:"lock_file"`
-	Jobs         []Job    `toml:"jobs"`
+	LockFile         string   `toml:"lock_file"`
+	WorktreeStateDir string   `toml:"worktree_state_dir"`
+	DefaultFlags     []string `toml:"default_flags"`
+	Targets          []Target `toml:"targets"`
+	Jobs             []Job    `toml:"jobs"`
+
+	// Deprecated compatibility fields from the rclone-backed era.
+	RcloneBinary string `toml:"rclone_binary"`
+	RcloneConfig string `toml:"rclone_config"`
 }
 
 func Load(path string) (Config, error) {
@@ -58,21 +77,48 @@ func Load(path string) (Config, error) {
 }
 
 func (c *Config) fillDefaults() error {
-	if c.RcloneBinary == "" {
-		c.RcloneBinary = "rclone"
-	}
-	if c.RcloneConfig == "" {
-		c.RcloneConfig = "~/.config/rclone/rclone.conf"
-	}
-	if len(c.DefaultFlags) == 0 {
-		c.DefaultFlags = []string{"--fast-list", "--stats=30s", "--use-json-log"}
-	}
 	if c.LockFile == "" {
 		c.LockFile = "~/.local/state/yggsync.lock"
 	}
-	if _, err := exec.LookPath(c.RcloneBinary); err != nil {
-		return fmt.Errorf("rclone binary %q not found in PATH", c.RcloneBinary)
+	if c.WorktreeStateDir == "" {
+		c.WorktreeStateDir = "~/.local/state/yggsync/worktrees"
 	}
+
+	targetSeen := make(map[string]struct{})
+	for i, t := range c.Targets {
+		if t.Name == "" {
+			return errors.New("target missing name")
+		}
+		if _, ok := targetSeen[t.Name]; ok {
+			return fmt.Errorf("duplicate target name: %s", t.Name)
+		}
+		targetSeen[t.Name] = struct{}{}
+
+		t.Type = strings.ToLower(strings.TrimSpace(t.Type))
+		if t.Type == "" {
+			t.Type = "smb"
+		}
+		switch t.Type {
+		case "smb":
+			if t.Host == "" {
+				return fmt.Errorf("target %s missing host", t.Name)
+			}
+			if t.Share == "" {
+				return fmt.Errorf("target %s missing share", t.Name)
+			}
+			if t.Port == 0 {
+				t.Port = 445
+			}
+		case "local":
+			if t.Path == "" {
+				return fmt.Errorf("target %s missing path", t.Name)
+			}
+		default:
+			return fmt.Errorf("target %s has unsupported type %q", t.Name, t.Type)
+		}
+		c.Targets[i] = t
+	}
+
 	seen := make(map[string]struct{})
 	for i, j := range c.Jobs {
 		if j.Name == "" {
@@ -82,7 +128,10 @@ func (c *Config) fillDefaults() error {
 			return errors.New("duplicate job name: " + j.Name)
 		}
 		seen[j.Name] = struct{}{}
-		j.Type = strings.ToLower(j.Type)
+		j.Type = strings.ToLower(strings.TrimSpace(j.Type))
+		if j.Type == "bisync" {
+			j.Type = "worktree"
+		}
 		if j.Direction == "" {
 			j.Direction = "push"
 		}
@@ -99,7 +148,7 @@ func (c *Config) fillDefaults() error {
 			return fmt.Errorf("job %s mixes filter_rules with include/exclude; pick one filter style", j.Name)
 		}
 		switch j.Type {
-		case "bisync", "copy", "sync", "retained_copy":
+		case "worktree", "copy", "sync", "retained_copy":
 		default:
 			return fmt.Errorf("job %s has unsupported type %q", j.Name, j.Type)
 		}
@@ -115,6 +164,35 @@ func (c Config) Job(name string) (Job, bool) {
 		}
 	}
 	return Job{}, false
+}
+
+func (c Config) Target(name string) (Target, bool) {
+	for _, t := range c.Targets {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return Target{}, false
+}
+
+func (t Target) ResolvedUsername() string {
+	if t.Username != "" {
+		return t.Username
+	}
+	if t.UsernameEnv != "" {
+		return os.Getenv(t.UsernameEnv)
+	}
+	return ""
+}
+
+func (t Target) ResolvedPassword() string {
+	if t.Password != "" {
+		return t.Password
+	}
+	if t.PasswordEnv != "" {
+		return os.Getenv(t.PasswordEnv)
+	}
+	return ""
 }
 
 func expandPath(p string) string {

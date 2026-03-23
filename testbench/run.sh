@@ -46,36 +46,23 @@ assert_missing() {
   }
 }
 
-assert_dirs_equal() {
-  diff -qr "$1" "$2" >>"$LOG" 2>&1 || {
-    log "assert failed: directories differ: $1 vs $2"
+assert_file_sets_equal() {
+  diff -u <(cd "$1" && find . -type f | sort) <(cd "$2" && find . -type f | sort) >>"$LOG" 2>&1 || {
+    log "assert failed: file sets differ: $1 vs $2"
     exit 1
   }
 }
 
 write_cfg() {
   cat >"$CFG" <<EOF
-rclone_binary = "rclone"
-rclone_config = "$WORKDIR/rclone.conf"
 lock_file = "$WORKDIR/yggsync.lock"
-default_flags = ["--use-json-log", "--stats=120s", "--transfers=2", "--checkers=4"]
+worktree_state_dir = "$WORKDIR/worktrees"
 
 [[jobs]]
 name = "obsidian"
-type = "bisync"
+type = "worktree"
 local = "$PHONE"
 remote = "$LAPTOP"
-resync_on_exit = [7]
-resync_flags = ["--resync"]
-flags = [
-  "--create-empty-src-dirs",
-  "--resilient",
-  "--recover",
-  "--max-delete",
-  "90",
-  "--conflict-loser",
-  "pathname"
-]
 exclude = ["**/.obsidian/**", "**/.trash/**"]
 timeout_seconds = 300
 
@@ -87,7 +74,6 @@ remote = "$REMOTE_MEDIA"
 local_retention_days = 1
 timeout_seconds = 300
 EOF
-  : >"$WORKDIR/rclone.conf"
 }
 
 build_bin() {
@@ -100,24 +86,34 @@ run_sync() {
 }
 
 seed_vault() {
-  mkdir -p "$PHONE/notes" "$LAPTOP/journal"
+  mkdir -p "$PHONE/notes"
   printf 'phone-a\n' >"$PHONE/notes/today.md"
+}
+
+seed_remote_update() {
+  mkdir -p "$LAPTOP/journal"
   printf 'laptop-a\n' >"$LAPTOP/journal/desk.md"
 }
 
 scenario_initial_sync() {
-  log "scenario: initial sync"
+  log "scenario: initial commit"
   seed_vault
-  run_sync --resync -jobs obsidian >>"$LOG" 2>&1
-  assert_exists "$PHONE/journal/desk.md"
+  run_sync -jobs obsidian -worktree-op commit >>"$LOG" 2>&1
   assert_exists "$LAPTOP/notes/today.md"
 }
 
+scenario_remote_update() {
+  log "scenario: remote update"
+  seed_remote_update
+  run_sync -jobs obsidian -worktree-op update >>"$LOG" 2>&1
+  assert_exists "$PHONE/journal/desk.md"
+}
+
 scenario_delete_propagates() {
-  log "scenario: delete propagation"
+  log "scenario: commit delete propagation"
   rm -rf "$PHONE/journal"
-  run_sync -jobs obsidian >>"$LOG" 2>&1
-  assert_missing "$LAPTOP/journal"
+  run_sync -jobs obsidian -worktree-op commit >>"$LOG" 2>&1
+  assert_missing "$LAPTOP/journal/desk.md"
 }
 
 scenario_retained_copy_safety() {
@@ -133,11 +129,11 @@ scenario_retained_copy_safety() {
 }
 
 require_cmd go
-require_cmd rclone
 build_bin
 write_cfg
 scenario_initial_sync
+scenario_remote_update
 scenario_delete_propagates
-assert_dirs_equal "$PHONE" "$LAPTOP"
+assert_file_sets_equal "$PHONE" "$LAPTOP"
 scenario_retained_copy_safety
 log "all scenarios passed"

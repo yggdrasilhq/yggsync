@@ -32,29 +32,17 @@ require_cmd() {
 
 write_cfg() {
   cat >"$CFG" <<EOF
-rclone_binary = "rclone"
-rclone_config = "$WORKDIR/rclone.conf"
 lock_file = "$WORKDIR/yggsync.lock"
-default_flags = ["--use-json-log", "--stats=120s", "--transfers=2", "--checkers=4"]
+worktree_state_dir = "$WORKDIR/worktrees"
 
 [[jobs]]
 name = "obsidian"
-type = "bisync"
+type = "worktree"
 local = "$PHONE"
 remote = "$LAPTOP"
-resync_on_exit = [7]
-resync_flags = ["--resync"]
-flags = [
-  "--create-empty-src-dirs",
-  "--resilient",
-  "--recover",
-  "--conflict-loser",
-  "pathname"
-]
 exclude = ["**/.obsidian/**", "**/.trash/**"]
 timeout_seconds = 300
 EOF
-  : >"$WORKDIR/rclone.conf"
 }
 
 build_bin() {
@@ -67,43 +55,35 @@ run_sync() {
 }
 
 seed_vault() {
-  mkdir -p "$PHONE/notes" "$LAPTOP/journal"
+  mkdir -p "$PHONE/notes"
   printf 'phone-a\n' >"$PHONE/notes/today.md"
-  printf 'laptop-a\n' >"$LAPTOP/journal/desk.md"
 }
 
 require_cmd go
-require_cmd rclone
 build_bin
 write_cfg
 
 log "scenario: initial sync"
 seed_vault
-run_sync --resync -jobs obsidian >>"$LOG" 2>&1
+run_sync -jobs obsidian -worktree-op commit >>"$LOG" 2>&1
 
-log "scenario: rename stress"
-mv "$PHONE/notes" "$PHONE/notes-renamed"
+log "scenario: conflicting edits"
+printf 'phone-b\n' >"$PHONE/notes/today.md"
+printf 'laptop-b\n' >"$LAPTOP/notes/today.md"
 set +e
-run_sync -jobs obsidian >>"$LOG" 2>&1
+run_sync -jobs obsidian -worktree-op sync >>"$LOG" 2>&1
 status=$?
 set -e
-log "plain rename run exit status: $status"
-
-log "scenario: forced recovery"
-set +e
-run_sync --resync --force-bisync -jobs obsidian >>"$LOG" 2>&1
-status=$?
-set -e
-log "forced recovery exit status: $status"
+log "conflict sync exit status: $status"
 
 printf '\nPHONE\n' | tee -a "$LOG"
 find "$PHONE" -maxdepth 3 -print | sort | tee -a "$LOG"
 printf '\nLAPTOP\n' | tee -a "$LOG"
 find "$LAPTOP" -maxdepth 3 -print | sort | tee -a "$LOG"
 
-if [[ -e "$LAPTOP/notes" || -e "$PHONE/notes" ]]; then
-  log "rename limitation reproduced: old path still exists after recovery"
+if [[ "$status" -eq 0 ]]; then
+  log "expected an explicit conflict, but sync exited successfully"
   exit 1
 fi
 
-log "rename limitation not reproduced in this environment"
+log "conflict behavior reproduced as expected"

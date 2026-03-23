@@ -11,7 +11,6 @@ func TestLoadRejectsDuplicateJobs(t *testing.T) {
 	t.Setenv("PATH", os.Getenv("PATH"))
 	cfgPath := filepath.Join(t.TempDir(), "dup.toml")
 	if err := os.WriteFile(cfgPath, []byte(`
-rclone_binary = "sh"
 [[jobs]]
 name = "notes"
 type = "copy"
@@ -35,7 +34,6 @@ remote = "nas:notes2"
 func TestLoadFillsDefaults(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "ok.toml")
 	if err := os.WriteFile(cfgPath, []byte(`
-rclone_binary = "sh"
 [[jobs]]
 name = "notes"
 type = "copy"
@@ -60,7 +58,6 @@ remote = "nas:notes"
 func TestLoadRejectsMixedFilterStyles(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "bad-filters.toml")
 	if err := os.WriteFile(cfgPath, []byte(`
-rclone_binary = "sh"
 [[jobs]]
 name = "notes"
 type = "bisync"
