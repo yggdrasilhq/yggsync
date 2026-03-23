@@ -17,6 +17,23 @@ That split is deliberate.
 Generic two-way sync is the wrong tool for a live vault on SMB.
 `yggsync` therefore treats Obsidian-like repos as a working copy against a central repository, not as a magic multi-writer folder.
 
+```mermaid
+flowchart TD
+    A[yggsync run] --> B[File sync job]
+    A --> C[Worktree job]
+
+    B --> D[copy]
+    B --> E[sync]
+    B --> F[retained_copy]
+    D --> G[Remote local path or SMB target]
+    E --> G
+    F --> G
+
+    C --> H[Local vault or worktree]
+    C --> I[Central repository]
+    C --> J[State file in worktree_state_dir]
+```
+
 ## Job Types
 
 - `copy`: copy local files to the destination
@@ -257,6 +274,20 @@ If both sides changed the same path, `yggsync` fails with an explicit conflict e
 It does not create `.conflictN` files on your behalf.
 
 This is closer to an `SVN` working-copy model than to a generic filesystem `bisync`.
+
+```mermaid
+flowchart LR
+    A[Local worktree] -->|update| B[Pull remote changes]
+    C[Central repository] -->|update| A
+
+    A -->|commit| D[Push local changes if remote unchanged]
+    D --> C
+
+    A -->|sync| E[Merge non-conflicting local and remote changes]
+    C -->|sync| E
+    E --> A
+    E --> C
+```
 
 ### Which Worktree Command To Run
 
