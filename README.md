@@ -319,6 +319,102 @@ Before first real use:
 6. For Obsidian `worktree`, choose `update` or `commit` explicitly for the first initialization
 7. Only after that, use normal scheduled runs
 
+## End-To-End Examples
+
+### Laptop Example
+
+Goal:
+
+- Linux laptop
+- push screenshots to the NAS
+- keep a local Obsidian vault and sync it against a central SMB repository
+
+Minimal config:
+
+```toml
+lock_file = "~/.local/state/yggsync.lock"
+worktree_state_dir = "~/.local/state/yggsync/worktrees"
+
+[[targets]]
+name = "nas"
+type = "smb"
+host = "nas.internal"
+share = "data"
+username = "smb-login"
+password_env = "SAMBA_PASSWORD"
+
+[[jobs]]
+name = "screenshots"
+type = "copy"
+local = "~/Pictures/Screenshots"
+remote = "nas:immich/path-user/desktop/Screenshots"
+
+[[jobs]]
+name = "obsidian"
+type = "worktree"
+local = "~/Documents/obsidian"
+remote = "nas:smbfs/path-user/obsidian"
+filter_rules = [
+  "- **/.obsidian/**",
+  "- **/.trash/**",
+  "- **/*.conflict*",
+]
+```
+
+First run:
+
+```bash
+export SAMBA_PASSWORD='your-password'
+yggsync -config ~/.config/ygg_sync.toml -list
+yggsync -config ~/.config/ygg_sync.toml -jobs screenshots -dry-run
+yggsync -config ~/.config/ygg_sync.toml -jobs obsidian -worktree-op update
+```
+
+### Android Example
+
+Goal:
+
+- Android phone in Termux
+- upload media to the NAS
+- keep an Obsidian worktree locally on the phone
+
+Minimal config:
+
+```toml
+lock_file = "~/.local/state/yggsync.lock"
+worktree_state_dir = "~/.local/state/yggsync/worktrees"
+
+[[targets]]
+name = "nas"
+type = "smb"
+host = "nas.internal"
+share = "data"
+username = "smb-login"
+password_env = "SAMBA_PASSWORD"
+
+[[jobs]]
+name = "obsidian"
+type = "worktree"
+local = "~/storage/shared/Documents/obsidian"
+remote = "nas:smbfs/path-user/obsidian"
+
+[[jobs]]
+name = "screenshots"
+type = "retained_copy"
+local = "~/storage/shared/Pictures/Screenshots"
+remote = "nas:immich/path-user/android/Screenshots"
+local_retention_days = 31
+```
+
+First run:
+
+```bash
+export SAMBA_PASSWORD='your-password'
+yggsync -config ~/.config/ygg_sync.toml -list
+yggsync -config ~/.config/ygg_sync.toml -jobs screenshots -dry-run
+yggsync -config ~/.config/ygg_sync.toml -jobs obsidian -worktree-op update
+```
+
 ## Testing
 
 ```bash
