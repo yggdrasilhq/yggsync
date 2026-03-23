@@ -19,11 +19,11 @@ import (
 )
 
 type Runner struct {
-	cfg     config.Config
-	dryRun  bool
+	cfg         config.Config
+	dryRun      bool
 	forceResync bool
 	forceBisync bool
-	version string
+	version     string
 }
 
 type Summary struct {
@@ -160,11 +160,17 @@ func (r *Runner) buildCommonArgs(op string, job config.Job) []string {
 	args := []string{op, local, job.Remote}
 	args = append(args, r.cfg.DefaultFlags...)
 	args = append(args, job.Flags...)
-	for _, inc := range job.Include {
-		args = append(args, "--include", inc)
-	}
-	for _, exc := range job.Exclude {
-		args = append(args, "--exclude", exc)
+	if len(job.FilterRules) > 0 {
+		for _, rule := range job.FilterRules {
+			args = append(args, "--filter", rule)
+		}
+	} else {
+		for _, inc := range job.Include {
+			args = append(args, "--include", inc)
+		}
+		for _, exc := range job.Exclude {
+			args = append(args, "--exclude", exc)
+		}
 	}
 	if r.dryRun {
 		args = append(args, "--dry-run")

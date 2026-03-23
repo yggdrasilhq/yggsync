@@ -1,36 +1,17 @@
 # yggsync
 
-`yggsync` is a small Go sync orchestrator for phones, laptops, and homelabs.
-It wraps `rclone` with a TOML job file so one binary can run a handful of repeatable sync flows without forcing every user to hand-roll shell scripts.
+`yggsync` is a small Go wrapper around `rclone` for repeatable endpoint sync jobs.
+It keeps the policy in one TOML file so phones, laptops, and timers run the same commands every time.
 
-## Why it exists
+## What It Does
 
-Most personal sync setups begin as one-off commands.
-That works until the jobs multiply: notes, camera roll, screenshots, chat exports, desktop downloads, and long-retention archives.
-At that point you need a tool that stays simple but gives you repeatable jobs, safer pruning, and one place to describe intent.
-
-`yggsync` is that layer.
-
-## Capabilities
-
-- single static Go binary
-- TOML-defined job catalog
-- `bisync`, `copy`, `sync`, and `retained_copy` job types
-- optional `keep_latest` rotation rules
-- optional one-time `--resync` retry for `bisync` jobs
-- manual `--resync` mode for operator recovery runs
-- per-job timeouts
-- lock file to prevent overlapping timer runs
-- `--dry-run`, `--list`, and `--jobs` selection for safe iteration
-- non-zero exit when any selected job fails
-
-## Typical uses
-
-- phone notes mirrored to a NAS
-- camera roll uploads with local retention
-- screenshot archives
-- chat export retention
-- desktop download subsets copied to a remote
+- runs named sync jobs from one config file
+- wraps `rclone bisync`, `copy`, and `sync`
+- adds a conservative `retained_copy` mode: upload first, prune local files only after remote confirmation
+- takes a lock to stop overlapping timer runs
+- supports per-job timeouts
+- supports explicit recovery runs with `--resync` and `--force-bisync`
+- returns non-zero if any selected job fails
 
 ## Build
 
@@ -45,28 +26,185 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/yggsync-linux-amd64 ./cmd
 GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o dist/yggsync-android-arm64 ./cmd/yggsync
 ```
 
-## Usage
+## Command Line
 
 ```bash
 yggsync -config ~/.config/ygg_sync.toml
-yggsync -jobs notes,camera-roll -dry-run
+yggsync -jobs notes,camera-roll
+yggsync -jobs notes -dry-run
 yggsync -jobs notes --resync
 yggsync -jobs notes --resync --force-bisync
 yggsync -list
 yggsync -version
 ```
 
-## Config
+Flags:
 
-Start from [`ygg_sync.example.toml`](./ygg_sync.example.toml) and keep your private values in `ygg_sync.local.toml` (gitignored).
-Key concepts:
+- `-config`: config file path. Defaults to `~/.config/ygg_sync.toml` or `$YGG_SYNC_CONFIG`.
+- `-jobs`: comma-separated job names. Default is all configured jobs.
+- `-dry-run`: passes `--dry-run` to `rclone` and disables local pruning.
+- `-resync`: forces `--resync` for selected `bisync` jobs.
+- `-force-bisync`: adds `--force` during manual bisync recovery.
+- `-list`: prints configured job names.
+- `-version`: prints the binary version.
 
-- `rclone_binary`: binary to invoke, default `rclone`
-- `rclone_config`: rclone config path
-- `lock_file`: prevents overlapping runs from timers or widgets
-- `default_flags`: flags applied to every rclone invocation
-- `[[jobs]]`: named sync jobs with local path, remote path, timeout, and type
-- `[[jobs.keep_latest]]`: keep newest N files matching a glob
+## Config File
+
+Start from [`ygg_sync.example.toml`](./ygg_sync.example.toml).
+
+Top-level keys:
+
+- `rclone_binary`: path or command name for `rclone`. Default: `rclone`
+- `rclone_config`: path to the `rclone.conf` file. Default: `~/.config/rclone/rclone.conf`
+- `default_flags`: flags appended to every `rclone` invocation
+- `lock_file`: file used to prevent overlapping runs. Default: `~/.local/state/yggsync.lock`
+
+Each `[[jobs]]` entry defines one named sync flow.
+
+Required per-job keys:
+
+- `name`
+- `type`
+- `local`
+- `remote`
+
+Supported job types:
+
+- `bisync`: two-way sync via `rclone bisync`
+- `copy`: one-way copy from local to remote
+- `sync`: one-way mirror from local to remote
+- `retained_copy`: copy first, then delete eligible local files only after remote confirmation
+
+Optional per-job keys:
+
+- `description`: operator-facing note
+- `flags`: extra `rclone` flags for that job
+- `include`: plain include globs
+- `exclude`: plain exclude globs
+- `filter_rules`: raw `rclone --filter` rules for cases that need exact control
+- `local_retention_days`: for `retained_copy`
+- `keep_latest`: keep newest `N` files matching a glob
+- `resync_on_exit`: retry `bisync` with `--resync` when `rclone` exits with one of these codes
+- `resync_flags`: extra flags added during that automatic resync retry
+- `timeout_seconds`: job-level timeout
+
+Rule: use either `include` and `exclude`, or `filter_rules`. Do not mix them in one job.
+
+## Config Examples
+
+Two-way notes sync:
+
+```toml
+[[jobs]]
+name = "notes"
+type = "bisync"
+local = "~/Documents/notes"
+remote = "nas:users/alice/notes"
+timeout_seconds = 900
+resync_on_exit = [7]
+resync_flags = ["--resync"]
+filter_rules = [
+  "- **/.obsidian/**",
+  "- **/.trash/**",
+  "- **/*.conflict*",
+  "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+]
+flags = [
+  "--create-empty-src-dirs",
+  "--resilient",
+  "--recover",
+  "--conflict-loser", "pathname",
+  "--max-delete", "90",
+]
+```
+
+Upload-first media archive with local retention:
+
+```toml
+[[jobs]]
+name = "camera-roll"
+type = "retained_copy"
+local = "~/Pictures/Camera"
+remote = "nas:users/alice/media/camera-roll"
+local_retention_days = 30
+flags = ["--create-empty-src-dirs"]
+```
+
+Selective copy with `keep_latest`:
+
+```toml
+[[jobs]]
+name = "downloads-archive"
+type = "copy"
+local = "~/Downloads"
+remote = "nas:users/alice/downloads"
+include = ["session-buddy-export-*", "exports/**"]
+exclude = ["*"]
+
+[[jobs.keep_latest]]
+glob = "session-buddy-export-*"
+keep = 1
+```
+
+## Obsidian on SMB
+
+For Obsidian vaults on SMB/NAS storage, use conservative filters.
+
+Recommended:
+
+- exclude `.obsidian/**` if you do not want device-local UI state to sync
+- exclude `*.conflict*` so old conflict artifacts do not keep churning
+- exclude DOS 8.3 aliases if the SMB backend exposes both the long name and the alias
+
+Example filter rules for those aliases:
+
+```toml
+filter_rules = [
+  "- [A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+  "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+]
+```
+
+That rule is an inference from a real SMB failure mode where directory listings contained bogus names such as `AW5E46~3.MD` alongside the real long filenames.
+
+## Recovery
+
+Normal run:
+
+```bash
+yggsync -jobs notes
+```
+
+If `bisync` aborts and says it needs a resync:
+
+```bash
+yggsync -jobs notes --resync
+```
+
+If you are deliberately rebuilding the bisync state after a messy rename/delete wave:
+
+```bash
+yggsync -jobs notes --resync --force-bisync
+```
+
+Use `-dry-run` first when you are unsure:
+
+```bash
+yggsync -jobs notes --resync --force-bisync -dry-run
+```
+
+## How yggclient Fits
+
+`yggsync` owns the binary and config schema.
+`yggclient` owns endpoint wrappers, timers, Android helpers, and template rendering.
+
+Current split:
+
+- `yggsync`: binary, TOML schema, retention logic, lock behavior
+- `yggclient`: install scripts, Android/desktop wrapper scripts, service/timer templates, endpoint-specific templates
+
+On Linux, `yggclient` can auto-render `~/.config/ygg_sync.toml` from its desktop template instead of copying a raw file.
+On Android, `yggclient` ships the phone template and the scheduling wrappers around `yggsync`.
 
 ## Testing
 
@@ -74,33 +212,6 @@ Key concepts:
 go test ./...
 ./testbench/run.sh
 ```
-
-The Go tests cover config validation, lock behavior, summary reporting, timeout handling, and force-resync wiring.
-The shell testbench exercises delete, rename, conflict, and retained-copy scenarios with mock phone/laptop directories.
-
-## Bisync Reality
-
-`rclone bisync` is useful, but it is not magic. Concurrent edits, deletes, renames, and long gaps between runs can still surface conflicts or require a deliberate `--resync` recovery pass.
-
-For large rename/delete waves that trip bisync safety checks, the operator path is explicit:
-
-```bash
-yggsync -jobs notes --resync --force-bisync
-```
-
-For public defaults, `yggsync` now favors slower, safer profiles over aggressive ones:
-
-- fewer transfers/checkers on phones
-- lock files to stop overlaps
-- explicit battery-aware wrappers in `yggclient`
-- safer bisync flags in the example configs
-- no default rename-tracking assumption on backends that cannot support it reliably
-
-## Boundaries
-
-- `yggsync`: sync engine and config format
-- `yggclient`: endpoint wrappers, install helpers, service templates
-- `yggdocs`: user guides, recipes, and ecosystem docs
 
 ## License
 
