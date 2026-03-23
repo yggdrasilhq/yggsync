@@ -1,20 +1,24 @@
 # Example yggsync configuration.
-# Copy to ~/.config/ygg_sync.toml and adjust remotes, paths, and retention.
+# yggsync is now a native sync engine; it no longer shells out to rclone.
 
-rclone_binary = "rclone"
-rclone_config = "~/.config/rclone/rclone.conf"
-default_flags = ["--use-json-log", "--stats=120s", "--transfers=2", "--checkers=4"]
 lock_file = "~/.local/state/yggsync.lock"
+worktree_state_dir = "~/.local/state/yggsync/worktrees"
+
+[[targets]]
+name = "nas"
+type = "smb"
+host = "nas.lan"
+share = "data"
+username = "alice"
+password_env = "SAMBA_PASSWORD"
 
 [[jobs]]
-name   = "notes"
-description = "Keep the working notes tree in sync between laptop and NAS"
-type   = "bisync"
-local  = "~/Documents/notes"
+name = "notes"
+description = "Single-user Obsidian worktree against a central SMB repository"
+type = "worktree"
+local = "~/Documents/notes"
 remote = "nas:users/alice/notes"
 timeout_seconds = 900
-resync_on_exit = [7]
-resync_flags   = ["--resync"]
 filter_rules = [
   "- **/.obsidian/**",
   "- **/.trash/**",
@@ -22,49 +26,38 @@ filter_rules = [
   "- [A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*",
   "- **/[A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*",
 ]
-flags = [
-  "--create-empty-src-dirs",
-  "--resilient",
-  "--recover",
-  "--conflict-loser",
-  "pathname",
-  "--max-delete",
-  "90",
-]
 
 [[jobs]]
-name   = "chat-backups"
-description = "Push chat export archives to remote storage"
-type   = "copy"
-local  = "~/Backups/chat"
+name = "chat-backups"
+description = "Push chat export archives to SMB storage"
+type = "copy"
+local = "~/Backups/chat"
 remote = "nas:users/alice/chat-backups"
 timeout_seconds = 600
-flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
-name   = "camera-roll"
+name = "camera-roll"
 description = "Upload camera media first, then prune old locals after remote confirmation"
-type   = "retained_copy"
-local  = "~/Pictures/Camera"
+type = "retained_copy"
+local = "~/Pictures/Camera"
 remote = "nas:users/alice/media/camera-roll"
 timeout_seconds = 1800
 local_retention_days = 30
-flags  = ["--create-empty-src-dirs"]
 
 [[jobs]]
-name   = "screenshots"
+name = "screenshots"
 description = "Offload screenshots and keep the device lean"
-type   = "retained_copy"
-local  = "~/Pictures/Screenshots"
+type = "retained_copy"
+local = "~/Pictures/Screenshots"
 remote = "nas:users/alice/media/screenshots"
 timeout_seconds = 900
 local_retention_days = 30
 
 [[jobs]]
-name   = "downloads-archive"
+name = "downloads-archive"
 description = "Archive only the download artifacts worth keeping"
-type   = "copy"
-local  = "~/Downloads"
+type = "copy"
+local = "~/Downloads"
 remote = "nas:users/alice/downloads"
 timeout_seconds = 900
 include = [
@@ -73,16 +66,6 @@ include = [
   "exports/**",
 ]
 exclude = ["*"]
-flags   = ["--create-empty-src-dirs"]
 [[jobs.keep_latest]]
 glob = "session-buddy-export-*"
 keep = 1
-
-[[jobs]]
-name   = "home-config"
-description = "Copy workstation configuration for recovery and migration"
-type   = "copy"
-local  = "~/.config"
-remote = "nas:users/alice/workstation/config"
-timeout_seconds = 1800
-flags  = ["--create-empty-src-dirs"]
