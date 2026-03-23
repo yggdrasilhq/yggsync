@@ -26,6 +26,7 @@ type Job struct {
 	Flags              []string         `toml:"flags"`
 	Include            []string         `toml:"include"`
 	Exclude            []string         `toml:"exclude"`
+	FilterRules        []string         `toml:"filter_rules"`
 	LocalRetentionDays int              `toml:"local_retention_days"`
 	KeepLatest         []KeepLatestRule `toml:"keep_latest"`
 	ResyncOnExit       []int            `toml:"resync_on_exit"`
@@ -93,6 +94,9 @@ func (c *Config) fillDefaults() error {
 		}
 		if j.Remote == "" {
 			return fmt.Errorf("job %s missing remote path", j.Name)
+		}
+		if len(j.FilterRules) > 0 && (len(j.Include) > 0 || len(j.Exclude) > 0) {
+			return fmt.Errorf("job %s mixes filter_rules with include/exclude; pick one filter style", j.Name)
 		}
 		switch j.Type {
 		case "bisync", "copy", "sync", "retained_copy":

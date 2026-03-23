@@ -56,3 +56,24 @@ remote = "nas:notes"
 		t.Fatalf("direction = %q want %q", got, want)
 	}
 }
+
+func TestLoadRejectsMixedFilterStyles(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "bad-filters.toml")
+	if err := os.WriteFile(cfgPath, []byte(`
+rclone_binary = "sh"
+[[jobs]]
+name = "notes"
+type = "bisync"
+local = "~/notes"
+remote = "nas:notes"
+exclude = ["*.tmp"]
+filter_rules = ["- *.bak"]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), "mixes filter_rules with include/exclude") {
+		t.Fatalf("expected mixed filter style error, got %v", err)
+	}
+}

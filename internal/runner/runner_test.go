@@ -130,3 +130,42 @@ func TestForceResyncAddsFlag(t *testing.T) {
 		t.Fatalf("expected --resync in args, got %q", string(args))
 	}
 }
+
+func TestFilterRulesAddFilterFlags(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "args.log")
+	script := filepath.Join(dir, "fake-rclone-log.sh")
+	body := "#!/bin/sh\nprintf '%s\n' \"$@\" > " + logFile + "\nexit 0\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		RcloneBinary: script,
+		RcloneConfig: filepath.Join(dir, "rclone.conf"),
+		LockFile:     filepath.Join(dir, "yggsync.lock"),
+		Jobs: []config.Job{
+			{
+				Name:        "notes",
+				Type:        "bisync",
+				Local:       dir,
+				Remote:      "remote:notes",
+				FilterRules: []string{"- *.conflict*", "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*"},
+			},
+		},
+	}
+	_ = os.WriteFile(cfg.RcloneConfig, []byte(""), 0o644)
+	if err := New(cfg, false, false, false, "test").RunJob(context.Background(), "notes"); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(args)
+	if !strings.Contains(got, "--filter\n- *.conflict*") {
+		t.Fatalf("expected conflict filter in args, got %q", got)
+	}
+	if !strings.Contains(got, "--filter\n- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*") {
+		t.Fatalf("expected DOS alias filter in args, got %q", got)
+	}
+}
