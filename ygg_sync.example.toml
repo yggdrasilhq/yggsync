@@ -15,7 +15,13 @@ remote = "nas:users/alice/notes"
 timeout_seconds = 900
 resync_on_exit = [7]
 resync_flags   = ["--resync"]
-exclude = ["**/.obsidian/**", "**/.trash/**"]
+filter_rules = [
+  "- **/.obsidian/**",
+  "- **/.trash/**",
+  "- **/*.conflict*",
+  "- [A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+  "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+]
 flags = [
   "--create-empty-src-dirs",
   "--resilient",
