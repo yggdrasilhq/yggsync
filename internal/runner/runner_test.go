@@ -149,7 +149,7 @@ func TestFilterRulesAddFilterFlags(t *testing.T) {
 				Type:        "bisync",
 				Local:       dir,
 				Remote:      "remote:notes",
-				FilterRules: []string{"- *.conflict*", "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*"},
+				FilterRules: []string{"- *.conflict*", "- **/[A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*"},
 			},
 		},
 	}
@@ -165,7 +165,7 @@ func TestFilterRulesAddFilterFlags(t *testing.T) {
 	if !strings.Contains(got, "--filter\n- *.conflict*") {
 		t.Fatalf("expected conflict filter in args, got %q", got)
 	}
-	if !strings.Contains(got, "--filter\n- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*") {
+	if !strings.Contains(got, "--filter\n- **/[A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*") {
 		t.Fatalf("expected DOS alias filter in args, got %q", got)
 	}
 }
