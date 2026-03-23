@@ -107,7 +107,7 @@ filter_rules = [
   "- **/.obsidian/**",
   "- **/.trash/**",
   "- **/*.conflict*",
-  "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+  "- **/[A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*",
 ]
 flags = [
   "--create-empty-src-dirs",
@@ -160,8 +160,8 @@ Example filter rules for those aliases:
 
 ```toml
 filter_rules = [
-  "- [A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
-  "- **/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]~[A-Za-z0-9].*",
+  "- [A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*",
+  "- **/[A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_][A-Za-z0-9_]~[A-Za-z0-9].*",
 ]
 ```
 
