@@ -47,6 +47,8 @@ type Job struct {
 	ResyncFlags        []string         `toml:"resync_flags"`
 	TimeoutSeconds     int              `toml:"timeout_seconds"`
 	StateFile          string           `toml:"state_file"`
+	ClientID           string           `toml:"client_id"`     // identity in the hub ledger's client cursors
+	NoMerge            bool             `toml:"no_merge"`      // disable diff3; divergence goes straight to .mergefail
 }
 
 type Config struct {
