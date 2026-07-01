@@ -33,6 +33,7 @@ type FS interface {
 	MkdirAll(ctx context.Context, rel string, perm os.FileMode) error
 	Remove(ctx context.Context, rel string) error
 	RemoveAll(ctx context.Context, rel string) error
+	Rename(ctx context.Context, oldRel, newRel string) error
 	Stat(ctx context.Context, rel string) (Entry, error)
 }
 
@@ -142,6 +143,14 @@ func (l *localFS) Remove(_ context.Context, rel string) error {
 
 func (l *localFS) RemoveAll(_ context.Context, rel string) error {
 	return os.RemoveAll(filepath.Join(l.root, filepath.FromSlash(rel)))
+}
+
+func (l *localFS) Rename(_ context.Context, oldRel, newRel string) error {
+	newFull := filepath.Join(l.root, filepath.FromSlash(newRel))
+	if err := os.MkdirAll(filepath.Dir(newFull), 0o755); err != nil {
+		return err
+	}
+	return os.Rename(filepath.Join(l.root, filepath.FromSlash(oldRel)), newFull)
 }
 
 func (l *localFS) Stat(_ context.Context, rel string) (Entry, error) {
@@ -279,6 +288,17 @@ func (s *smbFS) RemoveAll(ctx context.Context, rel string) error {
 		return nil
 	}
 	return err
+}
+
+func (s *smbFS) Rename(ctx context.Context, oldRel, newRel string) error {
+	newFull := s.full(newRel)
+	parent := path.Dir(newFull)
+	if parent != "." {
+		if err := s.share.WithContext(ctx).MkdirAll(parent, 0o755); err != nil {
+			return err
+		}
+	}
+	return s.share.WithContext(ctx).Rename(s.full(oldRel), newFull)
 }
 
 func (s *smbFS) Stat(ctx context.Context, rel string) (Entry, error) {

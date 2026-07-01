@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,11 +21,17 @@ import (
 )
 
 type Runner struct {
-	cfg        config.Config
-	dryRun     bool
-	worktreeOp string
-	version    string
+	cfg             config.Config
+	dryRun          bool
+	worktreeOp      string
+	version         string
+	allowMassDelete bool
 }
+
+// SetAllowMassDelete permits a run to delete a large share of hub files in one
+// pass. Off by default so an emptied or misconfigured local tree fails loudly
+// instead of wiping the hub.
+func (r *Runner) SetAllowMassDelete(v bool) { r.allowMassDelete = v }
 
 type Summary struct {
 	Succeeded []string
@@ -184,133 +189,6 @@ func (r *Runner) runRetainedCopy(ctx context.Context, job config.Job) error {
 		return nil
 	}
 	return safeDeleteIfRemoteExists(ctx, local, remote, localSnap, candidates, r.dryRun)
-}
-
-func (r *Runner) runWorktree(ctx context.Context, job config.Job) error {
-	local, remote, matcher, err := r.openJobFS(ctx, job)
-	if err != nil {
-		return err
-	}
-	defer local.Close()
-	defer remote.Close()
-
-	base, err := r.loadState(job)
-	if err != nil {
-		return err
-	}
-	localSnap, err := scanFS(ctx, local, matcher, true)
-	if err != nil {
-		return err
-	}
-	remoteSnap, err := scanFS(ctx, remote, matcher, true)
-	if err != nil {
-		return err
-	}
-
-	op := r.worktreeOp
-	if base == nil {
-		switch op {
-		case "sync":
-			switch {
-			case len(localSnap.Files) == 0 && len(remoteSnap.Files) == 0:
-				return r.saveState(job, localSnap)
-			case len(localSnap.Files) == 0:
-				if err := syncFromRemote(ctx, remote, local, Snapshot{Files: map[string]FileState{}, Dirs: map[string]DirState{}}, remoteSnap, r.dryRun); err != nil {
-					return err
-				}
-				if !r.dryRun {
-					return r.saveState(job, remoteSnap)
-				}
-				return nil
-			case len(remoteSnap.Files) == 0:
-				if err := syncFromRemote(ctx, local, remote, Snapshot{Files: map[string]FileState{}, Dirs: map[string]DirState{}}, localSnap, r.dryRun); err != nil {
-					return err
-				}
-				if !r.dryRun {
-					return r.saveState(job, localSnap)
-				}
-				return nil
-			case snapshotsEqual(localSnap, remoteSnap):
-				if !r.dryRun {
-					return r.saveState(job, localSnap)
-				}
-				return nil
-			default:
-				return fmt.Errorf("job %s: initial worktree is ambiguous; use -worktree-op commit or update explicitly", job.Name)
-			}
-		case "update":
-			if len(localSnap.Files) > 0 && len(remoteSnap.Files) > 0 && !snapshotsEqual(localSnap, remoteSnap) {
-				return fmt.Errorf("job %s: cannot initialize update into a non-empty differing local tree", job.Name)
-			}
-			if err := syncFromRemote(ctx, remote, local, Snapshot{Files: map[string]FileState{}, Dirs: map[string]DirState{}}, remoteSnap, r.dryRun); err != nil {
-				return err
-			}
-			if !r.dryRun {
-				return r.saveState(job, remoteSnap)
-			}
-			return nil
-		case "commit":
-			if len(remoteSnap.Files) > 0 && len(localSnap.Files) > 0 && !snapshotsEqual(localSnap, remoteSnap) {
-				return fmt.Errorf("job %s: cannot initialize commit into a non-empty differing remote tree", job.Name)
-			}
-			if err := syncFromRemote(ctx, local, remote, Snapshot{Files: map[string]FileState{}, Dirs: map[string]DirState{}}, localSnap, r.dryRun); err != nil {
-				return err
-			}
-			if !r.dryRun {
-				return r.saveState(job, localSnap)
-			}
-			return nil
-		default:
-			return fmt.Errorf("unsupported worktree op %q", op)
-		}
-	}
-
-	localChanged := changedPaths(*base, localSnap)
-	remoteChanged := changedPaths(*base, remoteSnap)
-
-	switch op {
-	case "update":
-		conflicts := conflictingPaths(localChanged, remoteChanged, localSnap, remoteSnap)
-		if len(conflicts) > 0 {
-			return conflictError(job.Name, conflicts)
-		}
-		if err := applyRemoteChanges(ctx, remote, local, *base, remoteSnap, localChanged, r.dryRun); err != nil {
-			return err
-		}
-		if !r.dryRun {
-			return r.saveState(job, mergeSnapshots(localSnap, remoteSnap))
-		}
-		return nil
-	case "commit":
-		if len(remoteChanged) > 0 {
-			return fmt.Errorf("job %s: remote changed since last state; run with -worktree-op sync or update first", job.Name)
-		}
-		if err := applyLocalChanges(ctx, local, remote, *base, localSnap, r.dryRun); err != nil {
-			return err
-		}
-		if !r.dryRun {
-			return r.saveState(job, localSnap)
-		}
-		return nil
-	case "sync":
-		conflicts := conflictingPaths(localChanged, remoteChanged, localSnap, remoteSnap)
-		if len(conflicts) > 0 {
-			return conflictError(job.Name, conflicts)
-		}
-		if err := applyRemoteChanges(ctx, remote, local, *base, remoteSnap, localChanged, r.dryRun); err != nil {
-			return err
-		}
-		if err := applyLocalChanges(ctx, local, remote, *base, localSnap, r.dryRun); err != nil {
-			return err
-		}
-		if !r.dryRun {
-			merged := mergeSnapshots(localSnap, remoteSnap)
-			return r.saveState(job, merged)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported worktree op %q", op)
-	}
 }
 
 func (r *Runner) openJobFS(ctx context.Context, job config.Job) (backend.FS, backend.FS, *filter.Matcher, error) {
@@ -551,173 +429,11 @@ func keepLatestCandidates(snap Snapshot, rules []config.KeepLatestRule) ([]strin
 	return toDelete, nil
 }
 
-func changedPaths(base, current Snapshot) map[string]struct{} {
-	changed := make(map[string]struct{})
-	for rel, baseState := range base.Files {
-		curState, ok := current.Files[rel]
-		if !ok || !sameFile(baseState, curState) {
-			changed[rel] = struct{}{}
-		}
-	}
-	for rel := range current.Files {
-		if _, ok := base.Files[rel]; !ok {
-			changed[rel] = struct{}{}
-		}
-	}
-	return changed
-}
-
-func conflictingPaths(localChanged, remoteChanged map[string]struct{}, localSnap, remoteSnap Snapshot) []string {
-	conflicts := make([]string, 0)
-	for rel := range localChanged {
-		if _, ok := remoteChanged[rel]; !ok {
-			continue
-		}
-		localState, lok := localSnap.Files[rel]
-		remoteState, rok := remoteSnap.Files[rel]
-		if lok && rok && sameFile(localState, remoteState) {
-			continue
-		}
-		conflicts = append(conflicts, rel)
-	}
-	sort.Strings(conflicts)
-	return conflicts
-}
-
 func conflictError(jobName string, conflicts []string) error {
 	if len(conflicts) > 8 {
 		return fmt.Errorf("job %s: worktree conflicts on %d paths, first few: %s", jobName, len(conflicts), strings.Join(conflicts[:8], ", "))
 	}
 	return fmt.Errorf("job %s: worktree conflicts: %s", jobName, strings.Join(conflicts, ", "))
-}
-
-func applyRemoteChanges(ctx context.Context, remote, local backend.FS, base, remoteSnap Snapshot, localChanged map[string]struct{}, dryRun bool) error {
-	return applyDirectionalChanges(ctx, remote, local, base, remoteSnap, localChanged, dryRun)
-}
-
-func applyLocalChanges(ctx context.Context, local, remote backend.FS, base, localSnap Snapshot, dryRun bool) error {
-	return applyDirectionalChanges(ctx, local, remote, base, localSnap, nil, dryRun)
-}
-
-func applyDirectionalChanges(ctx context.Context, src, dst backend.FS, base, srcSnap Snapshot, skip map[string]struct{}, dryRun bool) error {
-	if err := createDirs(ctx, dst, srcSnap, dryRun); err != nil {
-		return err
-	}
-
-	changed := changedPaths(base, srcSnap)
-	paths := make([]string, 0, len(changed))
-	for rel := range changed {
-		if skip != nil {
-			if _, ok := skip[rel]; ok {
-				continue
-			}
-		}
-		paths = append(paths, rel)
-	}
-	sort.Strings(paths)
-	for _, rel := range paths {
-		srcState, exists := srcSnap.Files[rel]
-		if !exists {
-			if dryRun {
-				log.Printf("[dry-run] would delete %s", rel)
-				continue
-			}
-			if err := dst.Remove(ctx, rel); err != nil {
-				return err
-			}
-			continue
-		}
-		if dryRun {
-			log.Printf("[dry-run] would copy %s", rel)
-			continue
-		}
-		if err := copyFile(ctx, src, dst, rel, srcState); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func syncFromRemote(ctx context.Context, src, dst backend.FS, base, srcSnap Snapshot, dryRun bool) error {
-	if err := applyDirectionalChanges(ctx, src, dst, base, srcSnap, nil, dryRun); err != nil {
-		return err
-	}
-	return nil
-}
-
-func mergeSnapshots(a, b Snapshot) Snapshot {
-	merged := Snapshot{
-		Files: make(map[string]FileState),
-		Dirs:  make(map[string]DirState),
-	}
-	for rel, state := range a.Files {
-		merged.Files[rel] = state
-	}
-	for rel, state := range b.Files {
-		merged.Files[rel] = state
-	}
-	for rel, state := range a.Dirs {
-		merged.Dirs[rel] = state
-	}
-	for rel, state := range b.Dirs {
-		merged.Dirs[rel] = state
-	}
-	return merged
-}
-
-func snapshotsEqual(a, b Snapshot) bool {
-	if len(a.Files) != len(b.Files) {
-		return false
-	}
-	for rel, aState := range a.Files {
-		bState, ok := b.Files[rel]
-		if !ok || !sameFile(aState, bState) {
-			return false
-		}
-	}
-	return true
-}
-
-func (r *Runner) loadState(job config.Job) (*Snapshot, error) {
-	path := r.statePath(job)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var snap Snapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return nil, err
-	}
-	if snap.Files == nil {
-		snap.Files = make(map[string]FileState)
-	}
-	if snap.Dirs == nil {
-		snap.Dirs = make(map[string]DirState)
-	}
-	return &snap, nil
-}
-
-func (r *Runner) saveState(job config.Job, snap Snapshot) error {
-	path := r.statePath(job)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	raw, err := json.MarshalIndent(snap, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, raw, 0o600)
-}
-
-func (r *Runner) statePath(job config.Job) string {
-	if job.StateFile != "" {
-		return config.ExpandPath(job.StateFile)
-	}
-	name := strings.NewReplacer("/", "-", "\\", "-", " ", "_", ":", "_").Replace(job.Name)
-	return filepath.Join(config.ExpandPath(r.cfg.WorktreeStateDir), name+".json")
 }
 
 func acquireLock(path string) (func(), error) {

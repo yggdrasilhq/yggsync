@@ -20,10 +20,24 @@ func main() {
 	list := flag.Bool("list", false, "List jobs and exit")
 	dryRun := flag.Bool("dry-run", false, "Do not modify anything")
 	worktreeOp := flag.String("worktree-op", "sync", "Worktree action for worktree jobs: sync, update, or commit")
+	allowMassDelete := flag.Bool("allow-mass-delete", false, "Permit deleting a large share of hub files in one run (off by default as a safety guard)")
 	_ = flag.Bool("resync", false, "Deprecated compatibility flag; native worktree sync no longer uses rclone bisync")
 	_ = flag.Bool("force-bisync", false, "Deprecated compatibility flag; native worktree sync no longer uses rclone bisync")
 	showVersion := flag.Bool("version", false, "Print version and exit")
-	flag.Parse()
+
+	// Accept job names as leading positional args, e.g. `yggsync obsidian -config X`.
+	// Go's flag package stops at the first non-flag token, so pull those leading
+	// job names off before parsing the remaining flags.
+	raw := os.Args[1:]
+	var positional []string
+	i := 0
+	for i < len(raw) && !strings.HasPrefix(raw[i], "-") {
+		positional = append(positional, raw[i])
+		i++
+	}
+	if err := flag.CommandLine.Parse(raw[i:]); err != nil {
+		os.Exit(2)
+	}
 
 	if *showVersion {
 		fmt.Println("yggsync", version)
@@ -50,9 +64,16 @@ func main() {
 			}
 		}
 	}
+	// Leading positional args (before flags) and any trailing ones are job names.
+	for _, arg := range append(positional, flag.Args()...) {
+		if trimmed := strings.TrimSpace(arg); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
 
 	ctx := context.Background()
 	r := runner.New(cfg, *dryRun, *worktreeOp, version)
+	r.SetAllowMassDelete(*allowMassDelete)
 
 	if len(names) == 0 {
 		names = make([]string, 0, len(cfg.Jobs))
