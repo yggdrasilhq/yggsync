@@ -4,6 +4,13 @@ This file tracks user-visible changes in `yggsync`.
 
 ## Unreleased
 
+## v0.3.1
+
+- Fix filter matching so a `**/dir/**` rule also excludes the directory at the
+  vault root, not only nested copies. Scoping a worktree job to a subtree turned
+  the vault's `.obsidian/` into a root-level dir that `**/.obsidian/**` failed to
+  match, leaking the whole app-config directory into sync. Added filter tests.
+
 ## v0.3.0
 
 - Worktree sync is being reworked to a hub-authoritative ledger with content

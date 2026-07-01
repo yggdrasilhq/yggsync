@@ -141,6 +141,23 @@ the client). So the first cutover is a one-way catch-up, not a merge:
 After cutover both sides are identical and the ledger's common-ancestor is
 exact, so the false-conflict class cannot recur.
 
+## Deployment architecture (field)
+
+In the field this engine ships as `yggsync-core`: the worktree sync engine. A
+separate orchestrator binary (`yggsync`, Android/Termux-specific) owns device
+policy — battery/temperature/network profiles, scheduling, notifications — and
+delegates worktree jobs to `yggsync-core` (its `-core-bin`). The two share one
+`ygg_sync.toml`. This ADR governs the core; the orchestrator is out of scope.
+The core's own `internal/gate` (`[gate]`, `-reason`) is therefore usually
+redundant in that deployment and stays dormant (default `manual` bypasses it);
+it exists for standalone/other-host use.
+
+Consequence for scoping: when the orchestrator points a worktree job at a vault
+subtree (e.g. `.../obsidian/main`), any dotdir that was nested under the old
+root becomes root-level. Exclusion rules must match the root form — see the
+`**/dir/**` root-match fix (v0.3.1) — or a whole app-config dir like `.obsidian`
+leaks into sync.
+
 ## Consequences
 
 - New `internal/merge` (pure-Go diff3) and `internal/ledger` packages.
