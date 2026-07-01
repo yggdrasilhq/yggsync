@@ -4,6 +4,8 @@ This file tracks user-visible changes in `yggsync`.
 
 ## Unreleased
 
+## v0.3.0
+
 - Worktree sync is being reworked to a hub-authoritative ledger with content
   based move detection and a diff3 three-way merge, replacing the whole-job
   hard-fail on conflict. See `docs/adr-001-hub-authoritative-ledger.md`.
