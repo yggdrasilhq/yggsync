@@ -59,25 +59,40 @@ Remote values work like this:
 
 ### Worktree Model
 
-`worktree` is closer to an `SVN` working-copy model than to a generic filesystem bisync.
+`worktree` reconciles a local working copy against a central hub using a
+**hub-authoritative ledger** as the common ancestor. The ledger, a
+content-addressed blob store, tombstones, and per-client cursors all live under
+`<remote>/.yggsync/` so history travels with the vault and survives a client
+reset. See `docs/adr-001-hub-authoritative-ledger.md` for the full design.
 
-- `update`: pull remote changes into local
-- `commit`: push local changes only if the remote has not changed since the saved state
-- `sync`: merge non-conflicting local and remote changes using the saved state
+Each path is resolved three-way against the ledger:
 
-If both sides changed the same path, `yggsync` fails with a conflict error.
-It does not create `.conflictN` files on your behalf.
+- changed on only one side -> the other side is authoritative (copy or delete)
+- a rename is a clean delete at the old path plus an add at the new path — it is
+  matched by content and is **never** reported as a conflict
+- changed on both sides -> a line-based `diff3` merge is attempted
+
+When a genuine conflict cannot be merged cleanly, the hub version stays live and
+your version is preserved beside it as `<name>.mergefail.<UTC-timestamp>`. The
+run still exits non-zero, writes a `CONFLICTS.md` at the vault root, and fires a
+Termux notification — but one unmergeable file never blocks the rest of the
+vault. No `.conflictN`-style silent overwrites, and nothing is lost.
+
+Safety:
+
+- A run that would delete a large share of hub files (e.g. an emptied or
+  misconfigured local tree) aborts unless you pass `-allow-mass-delete`.
+- `-dry-run` reports the planned actions without touching either replica.
 
 ```mermaid
 flowchart LR
-    A[Local worktree] -->|update| B[Pull remote changes]
-    C[Central repository] -->|update| A
-    A -->|commit| D[Push local changes if remote unchanged]
-    D --> C
-    A -->|sync| E[Merge non-conflicting changes]
-    C -->|sync| E
-    E --> A
-    E --> C
+    L[(.yggsync ledger<br/>on hub)] --- A
+    L --- C
+    A[Local worktree] -->|per-path 3-way| E{changed<br/>where?}
+    C[Central hub] -->|per-path 3-way| E
+    E -->|one side| F[copy / delete]
+    E -->|both, mergeable| G[diff3 merge -> both]
+    E -->|both, conflict| H[.mergefail sidecar<br/>+ CONFLICTS.md]
 ```
 
 ## What You Edit
@@ -128,7 +143,7 @@ The safest first run is small and explicit.
 1. Put credentials in the environment if the target uses `password_env`.
 2. List jobs.
 3. Dry-run one small file job.
-4. If you use `worktree`, choose `update` or `commit` explicitly for the first initialization.
+4. Dry-run the worktree job to see the planned pulls/pushes before committing.
 5. Only after that, let scheduled jobs run normally.
 
 Example:
@@ -137,8 +152,14 @@ Example:
 export SAMBA_PASSWORD='your-password'
 yggsync -config ~/.config/ygg_sync.toml -list
 yggsync -config ~/.config/ygg_sync.toml -jobs screenshots -dry-run
-yggsync -config ~/.config/ygg_sync.toml -jobs obsidian -worktree-op update
+yggsync obsidian -config ~/.config/ygg_sync.toml -dry-run
 ```
+
+A worktree job needs no explicit initialization mode. On first contact with a
+fresh hub (no `.yggsync` ledger) it seeds the ledger and reconciles: an empty
+local pulls everything, an empty hub receives everything, and identical trees
+just record state. A reset client safely re-pulls from the hub ledger rather
+than proposing to delete hub files.
 
 ## Normal Operation
 
@@ -152,11 +173,10 @@ For ordinary file jobs, the normal pattern is:
 
 ### Worktree Jobs
 
-Use these commands deliberately:
-
-- `update` when the remote is the source of truth and you want to refresh local
-- `commit` when local changes should become canonical on the remote
-- `sync` when the worktree already exists and you want non-conflicting merge behavior
+Run the job on a schedule; it reconciles automatically against the hub ledger.
+`-dry-run` previews actions; `-allow-mass-delete` is required only for an
+intentional bulk deletion (e.g. deliberately clearing the hub from an emptied
+local tree).
 
 On first initialization:
 
@@ -226,14 +246,22 @@ Guard scheduled runs so a missing mount does not turn into writes into an empty 
 [[jobs]]
 name = "obsidian"
 type = "worktree"
-local = "~/Documents/obsidian"
-remote = "nas:smbfs/path-user/obsidian"
+client_id = "phone"                        # identity in the hub ledger
+local = "~/Documents/obsidian/main"        # scope to a single vault
+remote = "nas:smbfs/path-user/obsidian/main"
 filter_rules = [
+  "- **/.yggsync/**",                      # never sync the ledger itself
+  "- CONFLICTS.md",                        # generated conflict report
   "- **/.obsidian/**",
   "- **/.trash/**",
   "- **/*.conflict*",
 ]
 ```
+
+`client_id` should be unique per device sharing a hub. `local`/`remote` can
+point at a single vault subtree to sync just that vault. The `.yggsync/`
+exclusion is enforced in code as well, but keep it in the filter so the ledger
+is never scanned as content.
 
 For SMB shares that expose DOS 8.3 aliases, exclude them too:
 
