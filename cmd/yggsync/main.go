@@ -13,7 +13,7 @@ import (
 	"yggsync/internal/runner"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 func main() {
 	cfgPath := flag.String("config", defaultConfigPath(), "Path to ygg_sync TOML config")
