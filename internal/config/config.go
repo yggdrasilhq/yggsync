@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"yggsync/internal/gate"
 )
 
 type KeepLatestRule struct {
@@ -52,11 +54,12 @@ type Job struct {
 }
 
 type Config struct {
-	LockFile         string   `toml:"lock_file"`
-	WorktreeStateDir string   `toml:"worktree_state_dir"`
-	DefaultFlags     []string `toml:"default_flags"`
-	Targets          []Target `toml:"targets"`
-	Jobs             []Job    `toml:"jobs"`
+	LockFile         string      `toml:"lock_file"`
+	WorktreeStateDir string      `toml:"worktree_state_dir"`
+	DefaultFlags     []string    `toml:"default_flags"`
+	Gate             gate.Policy `toml:"gate"`
+	Targets          []Target    `toml:"targets"`
+	Jobs             []Job       `toml:"jobs"`
 
 	// Deprecated compatibility fields from the rclone-backed era.
 	RcloneBinary string `toml:"rclone_binary"`
@@ -76,6 +79,29 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// LoadRuntime reads a small device-runtime TOML that carries a [gate] section,
+// kept separate from the jobs config so device policy can vary per host. A
+// missing path yields a zero (disabled) policy without error.
+func LoadRuntime(path string) (gate.Policy, error) {
+	if path == "" {
+		return gate.Policy{}, nil
+	}
+	raw, err := os.ReadFile(expandPath(path))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return gate.Policy{}, nil
+		}
+		return gate.Policy{}, err
+	}
+	var rt struct {
+		Gate gate.Policy `toml:"gate"`
+	}
+	if err := toml.Unmarshal(raw, &rt); err != nil {
+		return gate.Policy{}, err
+	}
+	return rt.Gate, nil
 }
 
 func (c *Config) fillDefaults() error {

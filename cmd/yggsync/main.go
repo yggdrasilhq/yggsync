@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"yggsync/internal/config"
+	"yggsync/internal/gate"
 	"yggsync/internal/runner"
 )
 
@@ -21,6 +22,8 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "Do not modify anything")
 	worktreeOp := flag.String("worktree-op", "sync", "Worktree action for worktree jobs: sync, update, or commit")
 	allowMassDelete := flag.Bool("allow-mass-delete", false, "Permit deleting a large share of hub files in one run (off by default as a safety guard)")
+	reason := flag.String("reason", "manual", "Why this run was triggered: 'manual' bypasses the device gate; anything else (e.g. 'scheduled') is gated")
+	runtimePath := flag.String("runtime", "", "Optional device-runtime TOML providing the [gate] policy (battery/temperature)")
 	_ = flag.Bool("resync", false, "Deprecated compatibility flag; native worktree sync no longer uses rclone bisync")
 	_ = flag.Bool("force-bisync", false, "Deprecated compatibility flag; native worktree sync no longer uses rclone bisync")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -54,6 +57,23 @@ func main() {
 			fmt.Println(j.Name)
 		}
 		return
+	}
+
+	// Device gate: scheduled runs may be skipped on low battery / high temp.
+	// Manual runs (reason=manual) always proceed. A `-runtime` policy overrides
+	// the main config's [gate].
+	if *reason != "manual" {
+		policy := cfg.Gate
+		if rt, err := config.LoadRuntime(*runtimePath); err != nil {
+			log.Fatalf("load runtime: %v", err)
+		} else if rt.Enabled || *runtimePath != "" {
+			policy = rt
+		}
+		if skip, why := gate.Check(policy); skip {
+			log.Printf("skipped (reason=%s): %s", *reason, why)
+			gate.Notify("yggsync skipped", why)
+			return
+		}
 	}
 
 	names := []string{}

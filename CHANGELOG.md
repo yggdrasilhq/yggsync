@@ -25,3 +25,7 @@ This file tracks user-visible changes in `yggsync`.
   touching either replica or the ledger.
 - Job names may be passed as positional args (`yggsync obsidian`) in addition to
   `-jobs`.
+- Add an optional device gate (`internal/gate`, `[gate]` config or a `-runtime`
+  TOML): scheduled runs (`-reason` other than `manual`) skip with a Termux
+  notification when the battery is below a threshold and not charging, or the
+  battery is too hot. Portable no-op where `termux-battery-status` is absent.
