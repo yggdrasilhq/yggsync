@@ -145,8 +145,16 @@ func globToRegex(glob string) string {
 		switch glob[i] {
 		case '*':
 			if i+1 < len(glob) && glob[i+1] == '*' {
-				b.WriteString(".*")
-				i++
+				// `**/` matches zero or more leading path segments, so a rule
+				// like `**/.obsidian/**` also excludes a root-level `.obsidian/`
+				// (not just nested ones). A bare trailing `**` matches anything.
+				if i+2 < len(glob) && glob[i+2] == '/' {
+					b.WriteString(`(?:.*/)?`)
+					i += 2
+				} else {
+					b.WriteString(".*")
+					i++
+				}
 			} else {
 				b.WriteString(`[^/]*`)
 			}
