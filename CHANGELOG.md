@@ -40,6 +40,11 @@ This file tracks user-visible changes in `yggsync`.
 - A named single-job invocation (`yggsync obsidian -reason scheduled`) picks
   up gating and notification policy from `[profiles.<job-name>]` when
   present.
+- Termux notifications never block a run: the notifier is started detached
+  with a 10s timeout. A hung Termux:API app previously wedged whole runs —
+  on one phone a run held the sync lock for days while blocked on a
+  notification child, so every later run bounced with "already running"
+  and no backup ran at all.
 
 ## v0.3.1
 

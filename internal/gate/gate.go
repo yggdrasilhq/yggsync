@@ -5,9 +5,12 @@
 package gate
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
+	"time"
 )
 
 // Policy describes when a scheduled run should be skipped. Zero-value fields
@@ -91,11 +94,27 @@ func readBattery() (Status, bool) {
 	return Status{Percentage: raw.Percentage, TempC: raw.Temperature, Charging: charging}, true
 }
 
-// Notify surfaces a skip reason as a Termux notification; a no-op elsewhere.
+// Notify surfaces a message as a Termux notification; a no-op elsewhere.
+// It never blocks the sync run: a hung or dozing Termux:API app must not
+// wedge the process (on one phone, runs blocked for days on a notification
+// child while still holding the sync lock, so every later run bounced with
+// "already running"). The notification command is started detached with a
+// short timeout and its exit is ignored.
 func Notify(title, msg string) {
 	bin, err := exec.LookPath("termux-notification")
 	if err != nil {
 		return
 	}
-	_ = exec.Command(bin, "--title", title, "--content", msg, "--id", "yggsync-gate").Run()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--title", title, "--content", msg, "--id", "yggsync-gate")
+	if err := cmd.Start(); err != nil {
+		return
+	}
+	go func() {
+		_ = cmd.Wait()
+		if ctx.Err() != nil {
+			log.Printf("notification timed out (Termux:API unresponsive); continuing")
+		}
+	}()
 }
