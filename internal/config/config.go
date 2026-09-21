@@ -49,8 +49,8 @@ type Job struct {
 	ResyncFlags        []string         `toml:"resync_flags"`
 	TimeoutSeconds     int              `toml:"timeout_seconds"`
 	StateFile          string           `toml:"state_file"`
-	ClientID           string           `toml:"client_id"`     // identity in the hub ledger's client cursors
-	NoMerge            bool             `toml:"no_merge"`      // disable diff3; divergence goes straight to .mergefail
+	ClientID           string           `toml:"client_id"` // identity in the hub ledger's client cursors
+	NoMerge            bool             `toml:"no_merge"`  // disable diff3; divergence goes straight to .mergefail
 }
 
 type Config struct {
@@ -102,6 +102,53 @@ func LoadRuntime(path string) (gate.Policy, error) {
 		return gate.Policy{}, err
 	}
 	return rt.Gate, nil
+}
+
+// DeviceProfile is one [profiles.<name>] entry of the device-runtime TOML.
+// It carries the same gating knobs under the names the Android wrappers use
+// (min_battery, max_battery_temp_c) plus notification policy. Fields that
+// only make sense to a long-lived scheduler on the phone (battery temperature
+// sampling intervals, cellular byte caps, Wi-Fi weekday windows) are accepted
+// by the TOML but not enforced here — scheduled jobs are already constrained
+// to unmetered networks by the Termux job scheduler.
+type DeviceProfile struct {
+	Enabled            bool    `toml:"enabled"`
+	MinBattery         int     `toml:"min_battery"`
+	MaxBatteryTempC    float64 `toml:"max_battery_temp_c"`
+	MonitorIntervalSec int     `toml:"monitor_interval_seconds"`
+	Notify             bool    `toml:"notify"`
+	CellularLimitBytes int64   `toml:"cellular_limit_bytes"`
+}
+
+// Gate renders the profile as a gate.Policy for the pre-run device gate.
+func (p DeviceProfile) Gate() gate.Policy {
+	return gate.Policy{
+		Enabled:           p.Enabled || p.MinBattery > 0 || p.MaxBatteryTempC > 0,
+		BatteryMinPercent: p.MinBattery,
+		MaxBatteryTempC:   p.MaxBatteryTempC,
+	}
+}
+
+// LoadProfiles reads the [profiles] table of the device-runtime TOML. A
+// missing path yields an empty table without error.
+func LoadProfiles(path string) (map[string]DeviceProfile, error) {
+	if path == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(expandPath(path))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var rt struct {
+		Profiles map[string]DeviceProfile `toml:"profiles"`
+	}
+	if err := toml.Unmarshal(raw, &rt); err != nil {
+		return nil, err
+	}
+	return rt.Profiles, nil
 }
 
 func (c *Config) fillDefaults() error {
@@ -234,4 +281,12 @@ func expandPath(p string) string {
 
 func ExpandPath(p string) string {
 	return expandPath(p)
+}
+
+// DefaultConfigPath is the config path used when no -config flag is given.
+func DefaultConfigPath() string {
+	if cfg := os.Getenv("YGG_SYNC_CONFIG"); cfg != "" {
+		return cfg
+	}
+	return "~/.config/ygg_sync.toml"
 }

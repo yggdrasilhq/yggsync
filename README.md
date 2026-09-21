@@ -339,6 +339,17 @@ Guard scheduled runs with a mount check such as:
 ConditionPathIsMountPoint=/mnt/nas/data
 ```
 
+### `read <root>: is a directory`, or a copy job that syncs nothing
+
+The job's `local` root is a symlink (on Termux, `~/storage/shared` points
+into `/storage/emulated/0`). Older binaries could not traverse a symlinked
+root: some builds failed every run trying to read the root as a file, others
+silently synced nothing. Fixed in v0.4.1 — upgrade the phone binary. If a
+job still skips paths, look for `walk: skipping …` lines in the run log:
+those are unreadable entries (typically `Android/data` under scoped
+storage), which are excluded from the sync rather than failing the job.
+Exclude them explicitly with `exclude` rules to silence the log.
+
 ## CLI Reference
 
 Common commands:
@@ -354,13 +365,35 @@ yggsync -list
 yggsync -version
 ```
 
+Device-run forms (Termux wrappers):
+
+```bash
+# Profile run: gate against [profiles.<name>] of the runtime TOML,
+# notify "<profile> stopped" on failure when notify = true.
+# Without -jobs this covers every non-worktree job.
+yggsync run -config ygg_sync.toml -runtime yggsync.runtime.toml -profile bulk -reason scheduled
+
+# Single job by name; gating/notification come from [profiles.<job-name>]
+# when the runtime TOML defines one.
+yggsync obsidian -config ygg_sync.toml -runtime yggsync.runtime.toml -reason scheduled
+
+# Regenerate ~/.local/state/yggsync/jobs/run-{obsidian,bulk}.sh and register
+# them with termux-job-scheduler (jobs 101/102, unmetered, persisted).
+# Termux:Boot re-runs this at every power-on.
+yggsync android install-jobs -config ygg_sync.toml -runtime yggsync.runtime.toml \
+  -obsidian-period-ms 10800000 -bulk-period-ms 43200000
+```
+
 Flags:
 
 - `-config`: config file path. Defaults to `~/.config/ygg_sync.toml` or `$YGG_SYNC_CONFIG`
-- `-jobs`: comma-separated job names. Default is all jobs
+- `-jobs`: comma-separated job names. Default is all jobs (non-worktree jobs for a `-profile` run)
 - `-dry-run`: simulate file operations
 - `-worktree-op`: `sync`, `update`, or `commit`
 - `-list`: print configured job names
+- `-reason`: `manual` bypasses the device gate; anything else is gated
+- `-runtime`: device-runtime TOML providing `[gate]` or `[profiles.<name>]`
+- `-profile`: device profile for gating and failure notifications
 - `-version`: print the binary version
 
 Legacy compatibility:

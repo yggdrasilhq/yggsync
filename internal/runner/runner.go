@@ -126,7 +126,7 @@ func (r *Runner) runCopy(ctx context.Context, job config.Job) error {
 	if err != nil {
 		return err
 	}
-	remoteSnap, err := scanFS(ctx, remote, matcher, false)
+	remoteSnap, err := scanDest(ctx, remote, matcher)
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (r *Runner) runRetainedCopy(ctx context.Context, job config.Job) error {
 	if err != nil {
 		return err
 	}
-	remoteSnap, err := scanFS(ctx, remote, matcher, false)
+	remoteSnap, err := scanDest(ctx, remote, matcher)
 	if err != nil {
 		return err
 	}
@@ -240,6 +240,19 @@ func scanFS(ctx context.Context, fs backend.FS, matcher *filter.Matcher, withHas
 		snap.Files[rel] = state
 		return nil
 	})
+	return snap, err
+}
+
+// scanDest scans the copy destination. A destination root that does not exist
+// yet is simply empty — the first copy creates it — while any other walk
+// failure propagates. The SOURCE side deliberately has no such tolerance: a
+// missing source root fails the run instead of masquerading as "nothing to
+// do".
+func scanDest(ctx context.Context, fs backend.FS, matcher *filter.Matcher) (Snapshot, error) {
+	snap, err := scanFS(ctx, fs, matcher, false)
+	if err != nil && errors.Is(err, backend.ErrRootMissing) {
+		return snap, nil
+	}
 	return snap, err
 }
 
