@@ -4,6 +4,13 @@ This file tracks user-visible changes in `yggsync`.
 
 ## Unreleased
 
+## v0.4.2
+
+- A sync-lock bounce (the 3-hourly obsidian and 12-hourly bulk schedules
+  overlapping) no longer fires the "yggsync <profile> stopped" phone
+  notification. The run still exits non-zero — it did no work — but a
+  bounce is the other run doing its job, not a failure worth paging.
+
 ## v0.4.1
 
 - Fix `copy`/`sync`/`retained_copy` jobs whose local root is a symlink

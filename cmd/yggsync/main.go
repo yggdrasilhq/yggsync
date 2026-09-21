@@ -14,7 +14,7 @@ import (
 	"yggsync/internal/termuxjobs"
 )
 
-const version = "0.4.1"
+const version = "0.4.2"
 
 func main() {
 	// Subcommand-compatible entry: the Android wrappers invoke
@@ -166,7 +166,11 @@ func main() {
 	}
 	log.Printf("summary ok=%d failed=%d duration=%s", len(summary.Succeeded), len(summary.Failed), summary.Duration.Round(0))
 	if len(summary.Failed) > 0 {
-		if deviceProfile.Notify {
+		// A bare sync-lock bounce is routine: the 3-hourly and 12-hourly
+		// schedules overlap, the other run is doing the work. It still
+		// exits non-zero (this attempt did nothing), but it must not page
+		// the phone.
+		if deviceProfile.Notify && notifyWorthy(summary.Failed) {
 			for _, name := range names {
 				if err, ok := summary.Failed[name]; ok {
 					gate.Notify(fmt.Sprintf("yggsync %s stopped", label), err.Error())
@@ -176,4 +180,16 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// notifyWorthy reports whether a failed summary describes a real job
+// failure rather than a lock bounce (the runner records the latter under
+// the pseudo-job "_lock" before any job runs).
+func notifyWorthy(failed map[string]error) bool {
+	for name := range failed {
+		if name != "_lock" {
+			return true
+		}
+	}
+	return false
 }
