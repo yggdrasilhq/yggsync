@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"path"
@@ -71,24 +72,65 @@ type localFS struct {
 
 func (l *localFS) Close() error { return nil }
 
+// Walk visits every entry under the job root, relative paths only, never the
+// root itself. The root is resolved through symlinks first: Termux jobs root
+// at `~/storage/shared`, a symlink into /storage/emulated, and WalkDir's
+// Lstat-based traversal refuses to descend into a symlinked root — which
+// silently produced an empty snapshot (and, in one deployed lineage, the root
+// itself offered as a file, failing every run with "read …: is a directory").
+// Per-entry failures (unreadable app dirs such as Android/data) are logged and
+// skipped so one unreadable subtree cannot blind the whole diff; a root that
+// cannot be resolved or listed fails the walk loudly instead.
+// ErrRootMissing reports that the FS root path does not exist. Scan callers
+// decide its meaning: a missing job SOURCE fails the run loudly (an empty
+// source snapshot must never look like "everything already synced"), while a
+// missing DESTINATION is simply empty until the first copy creates it.
+var ErrRootMissing = errRootMissing{}
+
+type errRootMissing struct{}
+
+func (errRootMissing) Error() string { return "root does not exist" }
+
 func (l *localFS) Walk(ctx context.Context, fn func(Entry) error) error {
-	err := filepath.WalkDir(l.root, func(full string, d os.DirEntry, err error) error {
+	root := l.root
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("local root %s: %w", root, ErrRootMissing)
+		}
+		return fmt.Errorf("local root %s unreachable: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("local root %s is not a directory", root)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("local root %s cannot be resolved: %w", root, err)
+	}
+	root = resolved
+
+	err = filepath.WalkDir(root, func(full string, d os.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if full == root {
+				return fmt.Errorf("local root %s cannot be listed: %w", root, err)
+			}
+			log.Printf("walk: skipping %s: %v", full, err)
+			return nil
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		if full == l.root {
+		if full == root {
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
-			return err
+			log.Printf("walk: skipping %s: %v", full, err)
+			return nil
 		}
-		rel, err := filepath.Rel(l.root, full)
+		rel, err := filepath.Rel(root, full)
 		if err != nil {
 			return err
 		}
